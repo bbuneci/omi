@@ -74,7 +74,9 @@ typedef enum _MessageTag
     ShellDisconnectReqTag = 31 | MessageTagIsRequest, /* Basically a InvokeInstanceReqTag */
     ShellCommandReqTag = 32 | MessageTagIsRequest, /* Basically a InvokeInstanceReqTag */
 #endif
-    PullRequestTag = 33 | MessageTagIsRequest
+    PullRequestTag = 33 | MessageTagIsRequest,
+    CreateAgentReqTag = 34,
+    PostSocketFileTag = 35
 }
 MessageTag;
 
@@ -1225,6 +1227,10 @@ MI_Boolean Message_IsInternalMessage( _In_ Message* msg )
             return MI_TRUE;
         }
     }
+
+    if (PostSocketFileTag == msg->tag)
+        return MI_TRUE;
+
     return MI_FALSE;
 }
 
@@ -1537,6 +1543,110 @@ MI_INLINE void __ProtocolEventConnect_Release(
 {
     __Message_Release(&self->base, cs);
 }
+
+/*
+**==============================================================================
+**
+** CreateAgentReq
+**
+**     Request from Engine to Server, to create a new agent
+**
+**==============================================================================
+*/
+
+#define MAX_AGENT_PARAMS 10
+typedef struct _CreateAgentReq
+{
+    Message         base;
+    MI_Uint32       uid;
+    MI_Uint32       gid;
+    MI_ConstString  agentPath;
+    MI_ConstString  agentParams[MAX_AGENT_PARAMS];
+}
+CreateAgentReq;
+
+#define CreateAgentReq_New(operationId, flags) \
+    __CreateAgentReq_New(operationId, flags, CALLSITE)
+
+MI_INLINE CreateAgentReq* __CreateAgentReq_New(
+    MI_Uint64 operationId,
+    MI_Uint32 flags,
+    CallSite cs)
+{
+    return (CreateAgentReq*)__Message_New(
+        CreateAgentReqTag,
+        sizeof(CreateAgentReq),
+        operationId,
+        flags,
+        cs);
+}
+
+#define CreateAgentReq_Release(self) \
+    __CreateAgentReq_Release(self, CALLSITE)
+
+MI_INLINE void __CreateAgentReq_Release(
+    CreateAgentReq* self,
+    CallSite cs)
+{
+    __Message_Release(&self->base, cs);
+}
+
+void CreateAgentReq_Print(const CreateAgentReq* msg, FILE* os);
+
+/*
+**==============================================================================
+**
+** PostSocketFile
+**
+**     Request Socket File Name
+**
+**==============================================================================
+*/
+
+typedef enum _PostSocketFileType
+{
+    PostSocketFileRequest = 0,
+    PostSocketFileResponse = 1
+}
+PostSocketFileType;
+
+typedef struct _PostSocketFile
+{
+    Message         base;
+    MI_Uint32       type;
+    MI_ConstString  sockFilePath;
+    MI_ConstString  secretString;
+}
+PostSocketFile;
+
+#define PostSocketFile_New(type) \
+    __PostSocketFile_New(type, CALLSITE)
+
+MI_INLINE PostSocketFile* __PostSocketFile_New(
+    PostSocketFileType type,
+    CallSite cs)
+{
+    PostSocketFile* res = (PostSocketFile*)__Message_New(
+        PostSocketFileTag, sizeof(PostSocketFile), 0, 0,
+        cs);
+
+    if (res)
+        res->type = type;
+
+    return res;
+}
+
+#define PostSocketFile_Release(self) \
+    __PostSocketFile_Release(self, CALLSITE)
+
+MI_INLINE void __PostSocketFile_Release(
+    PostSocketFile* self,
+    CallSite cs)
+{
+    __Message_Release(&self->base, cs);
+}
+
+void PostSocketFile_Print(const PostSocketFile* msg, FILE* os);
 
 /*
 **==============================================================================

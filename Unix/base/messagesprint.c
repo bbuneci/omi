@@ -315,6 +315,20 @@ void MessagePrint(const Message* msg, FILE* os)
             }
             break;
 
+        case CreateAgentReqTag:
+            {
+                const CreateAgentReq* m = (const CreateAgentReq*)msg;
+                CreateAgentReq_Print(m, os);
+            }
+            break;
+
+        case PostSocketFileTag:
+            {
+                const PostSocketFile* m = (const PostSocketFile*)msg;
+                PostSocketFile_Print(m, os);
+            }
+            break;
+
         default:
             Ftprintf(os, ZT("unknown message tag %d\n"), msg->tag);
             break;
@@ -625,6 +639,40 @@ void PullReq_Print(
         {NULL, 0, 0},
     };
     _Message_Print(msg, os, "PullReq", fields);
+}
+
+void CreateAgentReq_Print(
+    const CreateAgentReq* msg,
+    FILE* os)
+{
+    typedef CreateAgentReq Self;
+    static const Field fields[] =
+    {
+        {"tag", FT_UINT32, offsetof(Self, base.tag)},
+        {"operationId", FT_UINT64, offsetof(Self, base.operationId)},
+        {"uid", FT_UINT32, offsetof(Self, uid)},
+        {"gid", FT_UINT32, offsetof(Self, gid)},
+        {"agentPath", FT_STRING, offsetof(Self, agentPath)},
+        {NULL, 0, 0},
+    };
+    _Message_Print(msg, os, "CreateAgentReq", fields);
+}
+
+void PostSocketFile_Print(
+    const PostSocketFile* msg,
+    FILE* os)
+{
+    typedef PostSocketFile Self;
+    static const Field fields[] =
+    {
+        {"tag", FT_UINT32, offsetof(Self, base.tag)},
+        {"operationId", FT_UINT64, offsetof(Self, base.operationId)},
+        {"type", FT_UINT32, offsetof(Self, type)},
+        {"sockFilePath", FT_STRING, offsetof(Self, sockFilePath)},
+        {"secretString", FT_STRING, offsetof(Self, secretString)},
+        {NULL, 0, 0},
+    };
+    _Message_Print(msg, os, "PostSocketFile", fields);
 }
 
 

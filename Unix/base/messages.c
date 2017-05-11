@@ -205,6 +205,20 @@ static const MessageField postIndicationMessageFields[] =
     {MFT_END_OF_LIST, 0, 0, 0}
 };
 
+static const MessageField createAgentReqFields[] =
+{
+    {MFT_POINTER_OPT,offsetof(CreateAgentReq, agentPath),0,0},
+    {MFT_POINTER_OPT,offsetof(CreateAgentReq, agentParams),0,0},
+    {MFT_END_OF_LIST, 0, 0, 0}
+};
+
+static const MessageField postSocketFileFields[] =
+{
+    {MFT_POINTER_OPT,offsetof(PostSocketFile, sockFilePath),0,0},
+    {MFT_POINTER_OPT,offsetof(PostSocketFile, secretString),0,0},
+    {MFT_END_OF_LIST, 0, 0, 0}
+};
+
 /* Entries in this array corresponds to MessageTag values */
 typedef struct _MessageDeclaration
 {
@@ -251,6 +265,8 @@ static const MessageDeclaration allMessages[] = {
     {invokeMessageFields,               sizeof(InvokeReq),              MI_TRUE}, /* ShellConnectReqTag */
 #endif
     {pullMessageFields,                 sizeof(PullReq),                MI_TRUE},
+    {createAgentReqFields,              sizeof(CreateAgentReq),         MI_TRUE},
+    {postSocketFileFields,              sizeof(PostSocketFile),         MI_TRUE},
 };
 
 /*
@@ -789,6 +805,8 @@ const PAL_Char* _MsgNames[] = {
     PAL_T("ShellCommandReq(invoke)"),
 #endif
     PAL_T("PullReq"),
+    PAL_T("CreateAgentReq"),
+    PAL_T("PostSocketFile"),
 };
 
 const PAL_Char* MessageName(MI_Uint32 tag)

@@ -157,7 +157,7 @@ void RequestCallback(_Inout_ InteractionOpenParams* interactionParams);
 void FUNCTION_NEVER_RETURNS err(const ZChar* fmt, ...);
 void FUNCTION_NEVER_RETURNS info_exit(const ZChar* fmt, ...);
 void BinaryProtocolListenFile(const char *socketFile, MuxIn *mux, ProtocolBase **protocol);
-void BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **protocol);
+void BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **protocol, const char *socketFile, const char *expectedSecretString);
 void WsmanProtocolListen();
 void RunProtocol();
 void InitializeNetwork();

@@ -15,9 +15,7 @@ static ServerData s_data;
 
 int enginemain(int argc, const char* argv[])
 {
-#if defined(CONFIG_POSIX)
     int pidfile = -1;
-#endif
 
     arg0 = argv[0];
 
@@ -70,16 +68,25 @@ int enginemain(int argc, const char* argv[])
 
     while (!s_data.terminated)
     {
+        MI_Boolean r;
+
         InitializeNetwork();
 
         WsmanProtocolListen();
 
+        // binary connection with server
+        BinaryProtocolListenSock(s_opts.socketpairPort, &s_data.mux[1], &s_data.protocol1, NULL, NULL);
+
+        r = SendSocketFileRequest(&s_data.protocol1->protocolSocket);
+        if (r == MI_FALSE)
+            err(ZT("failed to send socket file request"));
+
+        // Give it a little time for SocketFile info to come back from server
+        Sleep_Milliseconds(50);
+        
         // binary connection with client
         const char *path = OMI_GetPath(ID_SOCKETFILE);
         BinaryProtocolListenFile(path, &s_data.mux[0], &s_data.protocol0);
-
-        // binary connection with server
-        BinaryProtocolListenSock(s_opts.socketpairPort, &s_data.mux[1], &s_data.protocol1);
 
         RunProtocol();
     }

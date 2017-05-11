@@ -13,12 +13,14 @@
 #include <pal/dir.h>
 #include <server/server.h>
 
+#define S_SOCKET_LENGTH 8
+#define S_SECRET_STRING_LENGTH 32
+#define SOCKET_FILE_NAME_LENGTH 10
+
 static Options s_opts;
 static ServerData s_data;
-#define S_SOCKET_LENGTH 8
-static char s_socket[S_SOCKET_LENGTH];
 
-static int _StartEngine(int argc, char** argv, const char *sockFile)
+static int _StartEngine(int argc, char** argv, const char *sockFile, const char *secretString)
 {
     Sock s[2];
     char engineFile[PAL_MAX_PATH_SIZE];
@@ -26,6 +28,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile)
     int fdLimit;
     int fd;
     int size;
+    char socketString[S_SOCKET_LENGTH];
 
     Strlcpy(engineFile, OMI_GetPath(ID_BINDIR), PAL_MAX_PATH_SIZE);
     Strlcat(engineFile, "/omiengine", PAL_MAX_PATH_SIZE);
@@ -56,7 +59,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile)
     if (child > 0)   // parent
     {
         Sock_Close(s[1]);
-        BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1);
+        BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
 
         return 0;
     }
@@ -87,7 +90,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile)
             close(fd);
     }
 
-    argv[argc-1] = int64_to_a(s_socket, S_SOCKET_LENGTH, (long long)s[1], &size);
+    argv[argc-1] = int64_to_a(socketString, S_SOCKET_LENGTH, (long long)s[1], &size);
 
     execv(argv[0], argv);
     err(PAL_T("Launch failed"));
@@ -116,7 +119,7 @@ static char** _DuplicateArgv(int argc, const char* argv[])
     return newArgv;
 }
 
-static int _GenerateRandomFileName(char *buffer, int length)
+static int _GenerateRandomString(char *buffer, int length)
 {
     const char letters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     time_t t;
@@ -135,9 +138,8 @@ static int _GenerateRandomFileName(char *buffer, int length)
     return 0;
 }
 
-static int _CreateSockFile(char* buffer, int size)
+static int _CreateSockFile(char *sockFileBuf, int sockFileBufSize, char *secretStringBuf, int secretStringBufSize)
 {
-#define SOCKET_FILE_NAME_LENGTH 10
     char sockDir[PAL_MAX_PATH_SIZE];
     char file[PAL_MAX_PATH_SIZE];
     char name[SOCKET_FILE_NAME_LENGTH];
@@ -179,15 +181,21 @@ static int _CreateSockFile(char* buffer, int size)
         }
     }
         
-    if ( _GenerateRandomFileName(name, SOCKET_FILE_NAME_LENGTH - 1) != 0)
+    if ( _GenerateRandomString(name, SOCKET_FILE_NAME_LENGTH) != 0)
     {
         err(PAL_T("Unable to generate socket file name"));
         return -1;
     }
 
-    Strlcpy(buffer, sockDir, size);
-    Strlcat(buffer, "/omi_", size);
-    Strlcat(buffer, name, size);
+    if ( _GenerateRandomString(secretStringBuf, secretStringBufSize) != 0)
+    {
+        err(PAL_T("Unable to generate secretString"));
+        return -1;
+    }
+
+    Strlcpy(sockFileBuf, sockDir, sockFileBufSize);
+    Strlcat(sockFileBuf, "/omi_", sockFileBufSize);
+    Strlcat(sockFileBuf, name, sockFileBufSize);
     return 0;
 }
 
@@ -224,6 +232,7 @@ int servermain(int argc, const char* argv[])
     int engine_argc = 0;
     char **engine_argv = NULL;
     char socketFile[PAL_MAX_PATH_SIZE];
+    char secretString[S_SECRET_STRING_LENGTH];
 
     arg0 = argv[0];
 
@@ -375,7 +384,7 @@ int servermain(int argc, const char* argv[])
     {
         int r;
 
-        r = _CreateSockFile(socketFile, PAL_MAX_PATH_SIZE);
+        r = _CreateSockFile(socketFile, PAL_MAX_PATH_SIZE, secretString, S_SECRET_STRING_LENGTH);
         if (r != 0)
         {
             err(ZT("failed to create socket file"));
@@ -384,7 +393,7 @@ int servermain(int argc, const char* argv[])
 
         InitializeNetwork();
 
-        r = _StartEngine(engine_argc, engine_argv, socketFile);
+        r = _StartEngine(engine_argc, engine_argv, socketFile, secretString);
         if (r != 0)
         {
             err(ZT("failed to start omi engine"));

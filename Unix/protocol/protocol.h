@@ -39,10 +39,7 @@ typedef enum _Protocol_AuthState
     PRT_AUTH_WAIT_CONNECTION_RESPONSE,
 
     /* authentication completed */
-    PRT_AUTH_OK,
-
-    /* listener (engine) has forwarded connect request to server */
-    PRT_AUTH_FORWARDED_REQUEST
+    PRT_AUTH_OK
 }
 Protocol_AuthState;
 
@@ -77,6 +74,8 @@ typedef struct _ProtocolBase
     MI_Boolean          skipInstanceUnpack;
     MI_Boolean          forwardRequests;       // true if in nonroot mode and msg should be forwarded
     Sock                forwardingPort[MAX_FORWARDING_PORTS];   // indexed by messageTag
+    const char*         expectedSecretString;          
+    const char*         socketFile;          
 }
 ProtocolBase;
 
@@ -103,6 +102,8 @@ typedef struct _ProtocolSocket
 
     /* Auth state */
     Protocol_AuthState  authState;
+    /* Engine auth state */
+    Protocol_AuthState  engineAuthState;
     /* server side - auhtenticated user's ids */
     AuthInfo            authInfo;
     Protocol_AuthData*  authData;
@@ -184,6 +185,14 @@ MI_INLINE void ProtocolSocketAndBase_ReadyToFinish(
 MI_Result Protocol_Run(
     ProtocolBase* self,
     MI_Uint64 timeoutUsec);
+
+MI_Boolean SendSocketFileRequest(
+    ProtocolSocket* h);
+
+MI_Boolean SendSocketFileResponse(
+    ProtocolSocket* h,
+    const char *socketFile,
+    const char *expectedSecretString);
 
 END_EXTERNC
 

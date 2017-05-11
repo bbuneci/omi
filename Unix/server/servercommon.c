@@ -1051,7 +1051,10 @@ void WsmanProtocolListen()
     }
 }
 
-void BinaryProtocolListenFile(const char *socketFile, MuxIn *mux, ProtocolBase **protocol)
+void BinaryProtocolListenFile(
+    const char *socketFile, 
+    MuxIn *mux, 
+    ProtocolBase **protocol)
 {
     MI_Result r;
     int i;
@@ -1087,10 +1090,18 @@ void BinaryProtocolListenFile(const char *socketFile, MuxIn *mux, ProtocolBase *
         {
             (*protocol)->forwardRequests = MI_FALSE;
         }
+
+        (*protocol)->socketFile = NULL;
+        (*protocol)->expectedSecretString = NULL;
     }
 }
 
-void BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **protocol)
+void BinaryProtocolListenSock(
+    Sock sock, 
+    MuxIn *mux, 
+    ProtocolSocketAndBase **protocol, 
+    const char *socketFile, 
+    const char *expectedSecretString)
 {
     MI_Result r;
 
@@ -1123,6 +1134,9 @@ void BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **pro
         {
             (*protocol)->internalProtocolBase.forwardRequests = MI_FALSE;
         }
+
+        (*protocol)->internalProtocolBase.socketFile = socketFile;
+        (*protocol)->internalProtocolBase.expectedSecretString = expectedSecretString;
     }
 }
 

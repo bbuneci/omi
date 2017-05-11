@@ -47,7 +47,10 @@
 **==============================================================================
 */
 
+#define S_SECRET_STRING_LENGTH 32
 static const MI_Uint32 _MAGIC = 0xC764445E;
+static char s_socketFile[PAL_MAX_PATH_SIZE];
+static char s_secretString[S_SECRET_STRING_LENGTH];
 
 /*
 **==============================================================================
@@ -560,7 +563,7 @@ static MI_Boolean _SendAuthResponse(
 }
 
 /*
-    Processes auht message while waiting second connect request
+    Processes auth message while waiting second connect request
     with content of the file.
     Updates auth states correspondingly.
     Parameters:
@@ -611,7 +614,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
 }
 
 /*
-    Processes auht message while waiting connect request
+    Processes auth message while waiting connect request
     Updates auth states correspondingly.
     Parameters:
     handler - socket handler
@@ -721,7 +724,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
 }
 
 /*
-    Processes auht message (either connect request or connect-response)
+    Processes auth message (either connect request or connect-response)
     Updates auth states correspondingly.
     Parameters:
     handler - socket handler
@@ -815,6 +818,123 @@ static MI_Boolean _ProcessAuthMessage(
     }
 
     /* unknown state? */
+    return MI_FALSE;
+}
+
+/**************** SocketFile-support **********************************************************/
+
+/* Creates and sends SocketFile request message */
+MI_Boolean SendSocketFileRequest(
+    ProtocolSocket* h)
+{
+    PostSocketFile* req;
+    MI_Boolean retVal = MI_TRUE;
+
+    req = PostSocketFile_New(PostSocketFileRequest);
+
+    if (!req)
+        return MI_FALSE;
+
+    /* send message */
+    {
+        DEBUG_ASSERT(h->message == NULL);
+        h->message = (Message*) req;
+
+        Message_AddRef(&req->base);
+
+        _PrepareMessageForSending(h);
+        retVal = _RequestCallbackWrite(h);
+    }
+
+    // h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+
+    PostSocketFile_Release(req);
+
+    return retVal;
+}
+
+MI_Boolean SendSocketFileResponse(
+    ProtocolSocket* h,
+    const char *socketFile,
+    const char *expectedSecretString)
+{
+    PostSocketFile* req;
+    MI_Boolean retVal = MI_TRUE;
+
+    req = PostSocketFile_New(PostSocketFileResponse);
+
+    if (!req)
+        return MI_FALSE;
+
+    if (socketFile && *socketFile)
+    {
+        req->sockFilePath = Batch_Strdup(req->base.batch, socketFile);
+        if (!req->sockFilePath)
+        {
+            PostSocketFile_Release(req);
+            return MI_FALSE;
+        }
+    }
+
+    if (expectedSecretString && *expectedSecretString)
+    {
+        req->secretString = Batch_Strdup(req->base.batch, expectedSecretString);
+        if (!req->secretString)
+        {
+            PostSocketFile_Release(req);
+            return MI_FALSE;
+        }
+    }
+
+    /* send message */
+    {
+        DEBUG_ASSERT(h->message == NULL);
+        h->message = (Message*)req;
+        Message_AddRef(&req->base);
+
+        _PrepareMessageForSending(h);
+        retVal = _RequestCallbackWrite(h);
+    }
+
+    // h->engineAuthState = PRT_AUTH_OK;
+
+    PostSocketFile_Release(req);
+
+    return retVal;
+}
+
+static MI_Boolean _ProcessEngineAuthMessage(
+    ProtocolSocket* handler,
+    Message *msg)
+{
+    ProtocolBase* protocolBase = (ProtocolBase*)handler->base.data;
+    PostSocketFile* sockMsg;
+
+    if (msg->tag != PostSocketFileTag)
+        return MI_FALSE;
+
+    sockMsg = (PostSocketFile*) msg;
+
+    /* server waiting engine's request */
+    if (PostSocketFileRequest == sockMsg->type)
+    {
+        if (!SendSocketFileResponse(handler, protocolBase->socketFile, protocolBase->expectedSecretString))
+            return MI_FALSE;
+
+        return MI_TRUE;
+    }
+
+    /* engine waiting for server's response? */
+    if (PostSocketFileResponse == sockMsg->type)
+    {
+        DEBUG_ASSERT(sockMsg->sockFilePath && sockMsg->secretString);
+            
+        Strlcpy(s_socketFile, sockMsg->sockFilePath, PAL_MAX_PATH_SIZE);
+        Strlcpy(s_secretString, sockMsg->secretString, S_SECRET_STRING_LENGTH);
+        
+        return MI_TRUE;
+    }
+
     return MI_FALSE;
 }
 
@@ -1014,11 +1134,17 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
             MessageName(msg->tag),
             msg->operationId );
 
+        if (msg->tag == PostSocketFileTag)
+        {
+            if( _ProcessEngineAuthMessage(handler, msg) )
+                ret = PRT_CONTINUE;
+        }
+
         if (PRT_AUTH_OK != handler->authState)
         {
-            if (protocolBase->forwardRequests == MI_TRUE)
+            if (msg->tag == BinProtocolNotificationTag)
             {
-                if (msg->tag == BinProtocolNotificationTag)
+                if (protocolBase->forwardRequests == MI_TRUE)
                 {
                     BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;                    
                     if (binMsg->type == BinNotificationConnectRequest)
@@ -1054,11 +1180,11 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         }
                     }
                 }
-            }
-            else
-            {
-                if( _ProcessAuthMessage(handler, msg) )
-                    ret = PRT_CONTINUE;
+                else
+                {
+                    if( _ProcessAuthMessage(handler, msg) )
+                        ret = PRT_CONTINUE;
+                }
             }
         }
         else
@@ -1693,6 +1819,7 @@ ProtocolSocket* _ProtocolSocket_Server_New(
 
         /* waiting for connect-request */
         self->authState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
+        //    self->engineAuthState = PRT_AUTH_OK;
     }
 
     return self;
@@ -1782,6 +1909,7 @@ MI_Result ProtocolSocketAndBase_New_Connector(
         h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
         h->base.handlerName = MI_T("BINARY_CONNECTOR");
         h->authState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+//        h->engineAuthState = PRT_AUTH_OK;
 
         /* send connect request */
         if( !_SendAuthRequest(h, user, password, NULL, -1) )
@@ -1868,6 +1996,8 @@ MI_Result _ProtocolSocketAndBase_New_From_Socket(
         /* skip authentication for established connections
             (only used in server/agent communication) */
         h->authState = PRT_AUTH_OK;
+
+//        h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
 
         r = _AddProtocolSocket_Handler(self->internalProtocolBase.selector, h);
 
