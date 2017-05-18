@@ -98,8 +98,8 @@ typedef struct _ProtocolSocket
     Header              recv_buffer;
     Header              send_buffer;
 
-    /* Auth state */
-    Protocol_AuthState  authState;
+    /* Client auth state */
+    Protocol_AuthState  clientAuthState;
     /* Engine auth state */
     Protocol_AuthState  engineAuthState;
     /* server side - auhtenticated user's ids */

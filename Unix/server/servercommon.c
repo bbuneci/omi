@@ -1115,7 +1115,7 @@ void BinaryProtocolListenSock(
             err(ZT("Protocol_New_Listener() failed."));
         }
 
-        (*protocol)->protocolSocket.authState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
+        (*protocol)->protocolSocket.clientAuthState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
         (*protocol)->internalProtocolBase.forwardRequests = (serverType == OMI_ENGINE) ? MI_TRUE : MI_FALSE;
 
         if (serverType == OMI_SERVER && s_optsPtr->nonRoot)

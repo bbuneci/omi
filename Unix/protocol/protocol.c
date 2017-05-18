@@ -592,7 +592,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
             return MI_FALSE;
 
         /* Auth ok */
-        handler->authState = PRT_AUTH_OK;
+        handler->clientAuthState = PRT_AUTH_OK;
         _FreeAuthData(handler);
 
         /* Get gid from user name */
@@ -609,7 +609,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
 
     /* Auth failed */
     _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
-    handler->authState = PRT_AUTH_FAILED;
+    handler->clientAuthState = PRT_AUTH_FAILED;
     return MI_FALSE;
 }
 
@@ -646,7 +646,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
                 return MI_FALSE;
 
             /* Auth ok */
-            handler->authState = PRT_AUTH_OK;
+            handler->clientAuthState = PRT_AUTH_OK;
             _FreeAuthData(handler);
             return MI_TRUE;
         }
@@ -655,7 +655,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
 
         /* Auth failed */
         _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
-        handler->authState = PRT_AUTH_FAILED;
+        handler->clientAuthState = PRT_AUTH_FAILED;
         return MI_FALSE;
     }
 
@@ -667,7 +667,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
             return MI_FALSE;
 
         /* Auth ok */
-        handler->authState = PRT_AUTH_OK;
+        handler->clientAuthState = PRT_AUTH_OK;
         return MI_TRUE;
     }
 #if defined(CONFIG_OS_WINDOWS)
@@ -678,7 +678,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         /* Ignore Auth by setting it to OK */
         handler->authInfo.uid = -1;
         handler->authInfo.gid = -1;
-        handler->authState = PRT_AUTH_OK;
+        handler->clientAuthState = PRT_AUTH_OK;
         return MI_TRUE;
     }
 #else
@@ -692,7 +692,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         {
             /* Auth failed */
             _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
-            handler->authState = PRT_AUTH_FAILED;
+            handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
 
@@ -702,7 +702,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
 
             /* Auth failed */
             _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
-            handler->authState = PRT_AUTH_FAILED;
+            handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
 
@@ -711,7 +711,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
             return MI_FALSE;
 
         /* Auth posponed */
-        handler->authState = PRT_AUTH_WAIT_CONNECTION_REQUEST_WITH_FILE_DATA;
+        handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_REQUEST_WITH_FILE_DATA;
 
         /* Remember uid we used to create file */
         handler->authInfo.uid = binMsg->uid;
@@ -747,19 +747,19 @@ static MI_Boolean _ProcessAuthMessage(
     binMsg = (BinProtocolNotification*) msg;
 
     /* server waiting client's first request? */
-    if (PRT_AUTH_WAIT_CONNECTION_REQUEST == handler->authState)
+    if (PRT_AUTH_WAIT_CONNECTION_REQUEST == handler->clientAuthState)
     {
         return _ProcessAuthMessageWaitingConnectRequest(handler, binMsg);
     }
 
     /* server waiting for client's file's content request? */
-    if (PRT_AUTH_WAIT_CONNECTION_REQUEST_WITH_FILE_DATA == handler->authState)
+    if (PRT_AUTH_WAIT_CONNECTION_REQUEST_WITH_FILE_DATA == handler->clientAuthState)
     {
         return _ProcessAuthMessageWaitingConnectRequestFileData(handler, binMsg);
     }
 
     /* client waiting for server's response? */
-    if (PRT_AUTH_WAIT_CONNECTION_RESPONSE == handler->authState)
+    if (PRT_AUTH_WAIT_CONNECTION_RESPONSE == handler->clientAuthState)
     {
         /* un-expected message */
         if (BinNotificationConnectResponse != binMsg->type)
@@ -767,7 +767,7 @@ static MI_Boolean _ProcessAuthMessage(
 
         if (binMsg->result == MI_RESULT_OK)
         {
-            handler->authState = PRT_AUTH_OK;
+            handler->clientAuthState = PRT_AUTH_OK;
 
             if( Atomic_Swap(&handler->connectEventSent, 1) == 0 )
             {
@@ -1000,16 +1000,19 @@ static MI_Boolean _ProcessSocketMaintenanceMessage(
         else
         {
             trace_InvalidEngineCredentials();
-            if(_SendSocketMaintenanceMsg(handler, SocketMaintenanceShutdown, "Invalid secret string received", sockMsg->sock) == 
-               MI_FALSE)
-                return MI_FALSE;
+            _SendSocketMaintenanceMsg(handler, SocketMaintenanceShutdown, "Invalid secret string received", sockMsg->sock);
+
+            // wait a bit?
+            _ProtocolSocket_Cleanup(handler);
         }
         return MI_TRUE;
     }
 
-    /* engine waiting for closing request */
+    /* engine waiting for closing request from server*/
     if (SocketMaintenanceShutdown == sockMsg->type)
     {
+        handler->base.sock = sockMsg->sock;
+        _ProtocolSocket_Cleanup(handler);
         return MI_TRUE;
     }
 
@@ -1249,10 +1252,13 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                 BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;
                 
                 _SendSocketMaintenanceMsg(handler, SocketMaintenanceShutdown, "Engine credentials not received", binMsg->forwardSock);
+
+                // wait a bit?
+                _ProtocolSocket_Cleanup(handler);
                 return PRT_RETURN_FALSE;
             }
         }
-        else if (PRT_AUTH_OK != handler->authState)
+        else if (PRT_AUTH_OK != handler->clientAuthState)
         {
             if (msg->tag == BinProtocolNotificationTag)
             {
@@ -1281,7 +1287,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         }
 
                         handler->base.sock = s;
-                        handler->authState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+                        handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
                         handler->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
 
                         if (!_SendSocketMaintenanceMsg(handler, SocketMaintenanceStartup, s_secretString, forwardSock))
@@ -1299,11 +1305,23 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         // forward to client
 
                         Sock s = binMsg->forwardSock;
-                        Sock forwardSock = handler->base.sock;
+                        Sock forwardSock = INVALID_SOCK;
 
                         if (binMsg->result == MI_RESULT_OK)
                         {
-                            handler->authState = PRT_AUTH_OK;
+                            handler->clientAuthState = PRT_AUTH_OK;
+
+                            // close socket to server
+                            Sock_Close(handler->base.sock);
+                        }
+                        else if (binMsg->result == MI_RESULT_ACCESS_DENIED)
+                        {
+                            // close socket to server
+                            Sock_Close(handler->base.sock);
+                        }
+                        else
+                        {
+                            forwardSock = handler->base.sock;
                         }
 
                         handler->base.sock = s;
@@ -1568,7 +1586,7 @@ static MI_Boolean _RequestCallback(
         else
         {
             handler->isConnected = MI_TRUE;
-            if( PRT_TYPE_CONNECTOR == protocolBase->type && PRT_AUTH_OK == handler->authState )
+            if( PRT_TYPE_CONNECTOR == protocolBase->type && PRT_AUTH_OK == handler->clientAuthState )
             {
                 if( Atomic_Swap(&handler->connectEventSent, 1) == 0 )
                 {
@@ -1591,7 +1609,7 @@ static MI_Boolean _RequestCallback(
             if( !handler->isConnected )
             {
                 handler->isConnected = MI_TRUE;
-                if( PRT_TYPE_CONNECTOR == protocolBase->type && PRT_AUTH_OK == handler->authState )
+                if( PRT_TYPE_CONNECTOR == protocolBase->type && PRT_AUTH_OK == handler->clientAuthState )
                 {
                     if( Atomic_Swap(&handler->connectEventSent, 1) == 0 )
                     {
@@ -1934,7 +1952,7 @@ ProtocolSocket* _ProtocolSocket_Server_New(
         self->base.handlerName = MI_T("BINARY_SERVER_CONNECTION");
 
         /* waiting for connect-request */
-        self->authState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
+        self->clientAuthState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
         self->engineAuthState = (protocolBase->expectedSecretString == NULL) ? PRT_AUTH_OK : PRT_AUTH_WAIT_CONNECTION_REQUEST;
     }
 
@@ -2024,7 +2042,7 @@ MI_Result ProtocolSocketAndBase_New_Connector(
         h->base.sock = connector;
         h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
         h->base.handlerName = MI_T("BINARY_CONNECTOR");
-        h->authState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+        h->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
         h->engineAuthState = PRT_AUTH_OK;
 
         /* send connect request */
@@ -2111,7 +2129,7 @@ MI_Result _ProtocolSocketAndBase_New_From_Socket(
         h->isConnected = MI_TRUE;
         /* skip authentication for established connections
             (only used in server/agent communication) */
-        h->authState = PRT_AUTH_OK;
+        h->clientAuthState = PRT_AUTH_OK;
 
         h->engineAuthState = PRT_AUTH_OK;
 
