@@ -1564,8 +1564,6 @@ typedef struct _CreateAgentReq
     Message         base;
     MI_Uint32       uid;
     MI_Uint32       gid;
-    MI_ConstString  agentPath;
-    MI_ConstString  agentParams[MAX_AGENT_PARAMS];
 }
 CreateAgentReq;
 

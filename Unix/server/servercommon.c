@@ -7,11 +7,13 @@
 **==============================================================================
 */
 #include <base/user.h>
+#include <sock/selector.h>
 #include <server/server.h>
 
 static Options *s_optsPtr = NULL;
 static ServerData *s_dataPtr = NULL;
 static ServerType serverType = OMI_SERVER;
+static const char* arg0 = 0;
 
 static Lock s_disp_mutex = LOCK_INITIALIZER;
 
@@ -218,7 +220,6 @@ void GetCommandLineOptions(
     const char* argv[])
 {
     int argc = *argc_;
-    const char* arg0 = argv[0];
     GetOptState state = GETOPTSTATE_INITIALIZER;
     static const char* opts[] =
     {
@@ -1168,6 +1169,8 @@ void RunProtocol()
             }
         }
 
+        Selector_SetServerType(&s_dataPtr->selector, (MI_Uint32)serverType);
+
         r = Selector_Run(&s_dataPtr->selector, ONE_SECOND_USEC, MI_FALSE);
 
         if (r != MI_RESULT_TIME_OUT)
@@ -1273,5 +1276,7 @@ void ServerCleanup(int pidfile)
         printf("WARNING: %s: server has unfreed blocks on exit\n", arg0);
         PAL_DumpAllocList();
     }
+
 #endif
 }
+

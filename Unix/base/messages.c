@@ -205,13 +205,6 @@ static const MessageField postIndicationMessageFields[] =
     {MFT_END_OF_LIST, 0, 0, 0}
 };
 
-static const MessageField createAgentReqFields[] =
-{
-    {MFT_POINTER_OPT,offsetof(CreateAgentReq, agentPath),0,0},
-    {MFT_POINTER_OPT,offsetof(CreateAgentReq, agentParams),0,0},
-    {MFT_END_OF_LIST, 0, 0, 0}
-};
-
 static const MessageField postSocketFileFields[] =
 {
     {MFT_POINTER_OPT,offsetof(PostSocketFile, sockFilePath),0,0},
@@ -270,7 +263,7 @@ static const MessageDeclaration allMessages[] = {
     {invokeMessageFields,               sizeof(InvokeReq),              MI_TRUE}, /* ShellConnectReqTag */
 #endif
     {pullMessageFields,                 sizeof(PullReq),                MI_TRUE},
-    {createAgentReqFields,              sizeof(CreateAgentReq),         MI_TRUE},
+    {emptyMessageFields,                sizeof(CreateAgentReq),         MI_TRUE},
     {postSocketFileFields,              sizeof(PostSocketFile),         MI_TRUE},
     {socketMaintenanceFields,           sizeof(SocketMaintenance),      MI_TRUE},
 };

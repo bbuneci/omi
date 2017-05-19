@@ -10,16 +10,13 @@
 #include <server/server.h>
 
 static Options s_opts;
-
 static ServerData s_data;
 
 int enginemain(int argc, const char* argv[])
 {
     int pidfile = -1;
 
-    arg0 = argv[0];
-
-    SetDefaults(&s_opts, &s_data, arg0, OMI_ENGINE);
+    SetDefaults(&s_opts, &s_data, argv[0], OMI_ENGINE);
 
     /* Get --destdir command-line option */
     GetCommandLineDestDirOption(&argc, argv);

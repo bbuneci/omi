@@ -871,6 +871,28 @@ static pid_t _SpawnAgentProcess(
     // return -1;  /* never get here */
 }
 
+static MI_Result _RequestSpawnOfAgentProcess(
+    ProtocolSocketAndBase** selfOut,
+    Selector *selector,
+    uid_t uid,
+    gid_t gid)
+{
+    MI_Result r;
+    
+    r = Protocol_New_Agent_Request(selfOut, selector, uid, gid);
+
+/*
+    pid_t child;
+    int fdLimit;
+    int fd;
+    char param_sock[32];
+    char param_logfd[32];
+    char param_idletimeout[32];
+    char *ret;
+*/
+    return r;
+}
+
 static void _AgentElem_CloseAgentItem( Strand* self_ )
 {
     AgentElem* agent = (AgentElem*)StrandMany_FromStrand(self_);
@@ -970,36 +992,41 @@ static AgentElem* _CreateAgent(
     int logfd = -1;
     InteractionOpenParams interactionParams;
 
-    /* create communication pipe */
-    if(0 != socketpair(AF_UNIX, SOCK_STREAM, 0, s))
-    {
-        trace_SocketPair_Failed();
-        return 0;
-    }
+    MI_Uint32 serverType = Selector_GetServerType(self->selector);
 
-    if (MI_RESULT_OK != Sock_SetBlocking(s[0], MI_FALSE) ||
-        MI_RESULT_OK != Sock_SetBlocking(s[1], MI_FALSE))
+    if (serverType == 0 /* server */)
     {
-        trace_SetNonBlocking_Failed();
-        goto failed;
-    }
-
-    /* create/open log file for agent */
-    {
-        char path[PAL_MAX_PATH_SIZE];
-
-        if (0 != FormatLogFileName(uid, gid, path))
+        /* create communication pipe */
+        if(0 != socketpair(AF_UNIX, SOCK_STREAM, 0, s))
         {
-            trace_CannotFormatLogFilename();
+            trace_SocketPair_Failed();
+            return 0;
+        }
+
+        if (MI_RESULT_OK != Sock_SetBlocking(s[0], MI_FALSE) ||
+            MI_RESULT_OK != Sock_SetBlocking(s[1], MI_FALSE))
+        {
+            trace_SetNonBlocking_Failed();
             goto failed;
         }
 
-        /* Create/open fiel with permisisons 644 */
-        logfd = open(path, O_WRONLY|O_CREAT|O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
-        if (logfd == -1)
+        /* create/open log file for agent */
         {
-            trace_CreateLogFile_Failed(scs(path), (int)errno);
-            goto failed;
+            char path[PAL_MAX_PATH_SIZE];
+
+            if (0 != FormatLogFileName(uid, gid, path))
+            {
+                trace_CannotFormatLogFilename();
+                goto failed;
+            }
+
+            /* Create/open fiel with permisisons 644 */
+            logfd = open(path, O_WRONLY|O_CREAT|O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+            if (logfd == -1)
+            {
+                trace_CreateLogFile_Failed(scs(path), (int)errno);
+                goto failed;
+            }
         }
     }
 
@@ -1022,38 +1049,48 @@ static AgentElem* _CreateAgent(
     agent->uid = uid;
     agent->gid = gid;
 
-    if ((agent->agentPID =
-        _SpawnAgentProcess(
-            s[0],
-            logfd,
-            uid,
-            gid,
-            self->provDir,
-            (MI_Uint32)(self->provmgr.idleTimeoutUsec / 1000000))) < 0)
+    if (serverType == 0 /* server */)
     {
-        trace_CannotSpawnChildProcess();
-        goto failed;
+        if ((agent->agentPID =
+             _SpawnAgentProcess(
+                 s[0],
+                 logfd,
+                 uid,
+                 gid,
+                 self->provDir,
+                 (MI_Uint32)(self->provmgr.idleTimeoutUsec / 1000000))) < 0)
+        {
+            trace_CannotSpawnChildProcess();
+            goto failed;
+        }
+
+        close(logfd);
+        logfd = -1;
+
+        /* Close socket 0 - it will be used by child process */
+        Sock_Close(s[0]);
     }
-
-    close(logfd);
-    logfd = -1;
-
-    //printf("Press any key to continue\n");
-    //getchar();
-
-
-    /* Close socket 0 - it will be used by child process */
-    Sock_Close(s[0]);
+    else /* Engine */
+    {
+        if (_RequestSpawnOfAgentProcess(&agent->protocol, self->selector, uid, gid) != MI_RESULT_OK)
+        {
+            trace_CannotSpawnChildProcess();
+            goto failed;
+        }
+    }
     s[0] = INVALID_SOCK;
 
     Strand_OpenPrepare(&agent->strand.strand,&interactionParams,NULL,NULL,MI_TRUE);
 
-    if( MI_RESULT_OK != ProtocolSocketAndBase_New_AgentConnector(
-        &agent->protocol,
-        self->selector,
-        s[1],
-        &interactionParams ) )
+    if (serverType == 0 /* server */)
+    {
+        if( MI_RESULT_OK != ProtocolSocketAndBase_New_AgentConnector(
+                &agent->protocol,
+                self->selector,
+                s[1],
+                &interactionParams ) )
             goto failed;
+    }
 
     s[1] = INVALID_SOCK;
 

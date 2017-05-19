@@ -192,6 +192,12 @@ MI_Boolean SendSocketFileResponse(
     const char *socketFile,
     const char *expectedSecretString);
 
+MI_Result Protocol_New_Agent_Request(
+    ProtocolSocketAndBase** selfOut,
+    Selector *selector,
+    uid_t uid,
+    gid_t gid);
+
 END_EXTERNC
 
 #endif /* _omi_protocol_h */

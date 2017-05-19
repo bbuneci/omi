@@ -118,6 +118,9 @@ typedef struct _SelectorRep
 
     /* io thread id */
     ThreadID    ioThreadHandle;
+    
+    /* 0 = server, 1 = engine */
+    MI_Uint32 serverType;
 }
 SelectorRep;
 
@@ -780,4 +783,12 @@ int Selector_IsSelectorThread(Selector* self, ThreadID *id)
     }
 }
 
+void Selector_SetServerType(Selector *self, MI_Uint32 type)
+{
+    self->rep->serverType = type;
+}
 
+MI_Uint32 Selector_GetServerType(Selector *self)
+{
+    return self->rep->serverType;
+}

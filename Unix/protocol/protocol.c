@@ -977,6 +977,48 @@ static MI_Boolean _SendSocketMaintenanceMsg(
     return retVal;
 }
 
+static MI_Boolean _SendCreateAgentReq(
+    ProtocolSocket* h,
+    uid_t uid,
+    gid_t gid)
+{
+    CreateAgentReq* req;
+    MI_Boolean retVal = MI_TRUE;
+
+    req = CreateAgentReq_New(uid, gid);
+
+    if (!req)
+        return MI_FALSE;
+
+/*
+    req->sock = s;
+
+    if (message && *message)
+    {
+        req->message = Batch_Strdup(req->base.batch, message);
+        if (!req->message)
+        {
+            SocketMaintenance_Release(req);
+            return MI_FALSE;
+        }
+    }
+    */
+    /* send message */
+    {
+        DEBUG_ASSERT(h->message == NULL);
+        h->message = (Message*) req;
+
+        Message_AddRef(&req->base);
+
+        _PrepareMessageForSending(h);
+        retVal = _RequestCallbackWrite(h);
+    }
+
+    CreateAgentReq_Release(req);
+
+    return retVal;
+}
+
 static MI_Boolean _ProcessSocketMaintenanceMessage(
     ProtocolSocket* handler,
     Message *msg)
@@ -2279,5 +2321,68 @@ static MI_Result _SendIN_IO_thread(
     /* The refcount was bumped when we posted, this will lower and delete
      * if necessary */
     ProtocolSocket_Release(sendSock);
+    return MI_RESULT_OK;
+}
+
+MI_Result Protocol_New_Agent_Request(
+    ProtocolSocketAndBase** selfOut,
+    Selector *selector,
+    uid_t uid,
+    gid_t gid)
+{
+    MI_Result r;
+    InteractionOpenParams params;
+    Sock s;
+
+    ProtocolSocketAndBase *protocolSocketAndBase;
+
+    r = _ProtocolSocketAndBase_New( STRAND_DEBUG(ProtocolConnector) &protocolSocketAndBase, &params, selector, NULL, NULL, 
+                                    PRT_TYPE_CONNECTOR );
+    if( r != MI_RESULT_OK )
+        return r;
+
+    // Connect to server.
+    r = _CreateConnector(&s, s_socketFile);
+    if (r != MI_RESULT_OK && r != MI_RESULT_WOULD_BLOCK)
+    {
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        trace_SocketConnectorFailed(s_socketFile);
+        return r;
+    }
+
+    ProtocolSocket* h = &protocolSocketAndBase->protocolSocket;
+
+    h->base.sock = s;
+    h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
+    h->clientAuthState = PRT_AUTH_OK;
+    h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+
+    r = _AddProtocolSocket_Handler(selector, h);
+
+    if (r != MI_RESULT_OK)
+    {
+        Sock_Close(s);
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        return r;
+    }
+
+    if (!_SendSocketMaintenanceMsg(h, SocketMaintenanceStartup, s_secretString, INVALID_SOCK))
+    {
+        Selector_RemoveHandler(selector, &h->base);
+        Sock_Close(s);
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        return MI_RESULT_FAILED;
+    }
+
+    if (!_SendCreateAgentReq(h, uid, gid))
+    {
+        Selector_RemoveHandler(selector, &h->base);
+        Sock_Close(s);
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        return MI_RESULT_FAILED;
+    }
+
+    *selfOut = protocolSocketAndBase;
+
     return MI_RESULT_OK;
 }

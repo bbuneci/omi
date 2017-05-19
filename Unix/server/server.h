@@ -39,31 +39,6 @@
 # include <pthread.h>
 #endif
 
-static const ZChar HELP[] = ZT("\
-Usage: %s [OPTIONS]\n\
-\n\
-This program starts the server.\n\
-\n\
-OPTIONS:\n\
-    -h, --help                  Print this help message.\n\
-    -d                          Daemonize the server process (POSIX only).\n\
-    -s                          Stop the server process (POSIX only).\n\
-    -r                          Re-read configuration by the running server (POSIX only).\n\
-    --reload-dispatcher         Re-read configuration by the running server (POSIX only), but don't unload providers.\n\
-    --httpport PORT             HTTP protocol listener port.\n\
-    --httpsport PORT            HTTPS protocol listener port.\n\
-    --idletimeout TIMEOUT       Idle providers unload timeout (in seconds).\n\
-    -v, --version               Print version information.\n\
-    -l, --logstderr             Send log output to standard error.\n\
-    --loglevel LEVEL            Set logging level to one of the following\n\
-                                symbols/numbers: fatal/0, error/1, warning/2,\n\
-                                info/3, debug/4, verbose/5 (default 2).\n\
-    --httptrace                 Enable logging of HTTP traffic.\n\
-    --timestamp                 Print timestamp server was built with.\n\
-    --nonroot                   Run in non-root mode.\n\
-    --service ACCT              Use ACCT as the service account.\n\
-\n");
-
 typedef struct _ServerData ServerData;
 
 typedef enum _ServerTransportType
@@ -138,9 +113,6 @@ typedef struct _Options
 Options;
 
 typedef enum _ServerType { OMI_SERVER, OMI_ENGINE } ServerType;
-
-static const char* arg0 = 0;
-
 
 void PrintProviderMsg(_In_ Message* msg);
 void GetCommandLineDestDirOption(int* argc_, const char* argv[]);

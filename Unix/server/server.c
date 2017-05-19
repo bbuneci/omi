@@ -20,6 +20,31 @@
 static Options s_opts;
 static ServerData s_data;
 
+static const ZChar HELP[] = ZT("\
+Usage: %s [OPTIONS]\n\
+\n\
+This program starts the server.\n\
+\n\
+OPTIONS:\n\
+    -h, --help                  Print this help message.\n\
+    -d                          Daemonize the server process (POSIX only).\n\
+    -s                          Stop the server process (POSIX only).\n\
+    -r                          Re-read configuration by the running server (POSIX only).\n\
+    --reload-dispatcher         Re-read configuration by the running server (POSIX only), but don't unload providers.\n\
+    --httpport PORT             HTTP protocol listener port.\n\
+    --httpsport PORT            HTTPS protocol listener port.\n\
+    --idletimeout TIMEOUT       Idle providers unload timeout (in seconds).\n\
+    -v, --version               Print version information.\n\
+    -l, --logstderr             Send log output to standard error.\n\
+    --loglevel LEVEL            Set logging level to one of the following\n\
+                                symbols/numbers: fatal/0, error/1, warning/2,\n\
+                                info/3, debug/4, verbose/5 (default 2).\n\
+    --httptrace                 Enable logging of HTTP traffic.\n\
+    --timestamp                 Print timestamp server was built with.\n\
+    --nonroot                   Run in non-root mode.\n\
+    --service ACCT              Use ACCT as the service account.\n\
+\n");
+
 static int _StartEngine(int argc, char** argv, const char *sockFile, const char *secretString)
 {
     Sock s[2];
@@ -233,8 +258,7 @@ int servermain(int argc, const char* argv[])
     char **engine_argv = NULL;
     char socketFile[PAL_MAX_PATH_SIZE];
     char secretString[S_SECRET_STRING_LENGTH];
-
-    arg0 = argv[0];
+    const char* arg0 = argv[0];
 
     SetDefaults(&s_opts, &s_data, arg0, OMI_SERVER);
 
