@@ -17,6 +17,7 @@
 #include <sock/selector.h>
 #include <pal/thread.h>
 #include <protocol/header.h>
+#include <disp/agentmgr.h>
 
 BEGIN_EXTERNC
 
@@ -194,7 +195,8 @@ MI_Boolean SendSocketFileResponse(
 
 MI_Result Protocol_New_Agent_Request(
     ProtocolSocketAndBase** selfOut,
-    Selector *selector,
+    const AgentMgr* agentMgr,
+    InteractionOpenParams *params,
     uid_t uid,
     gid_t gid);
 

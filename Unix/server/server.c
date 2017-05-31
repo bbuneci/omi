@@ -83,6 +83,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
 
     if (child > 0)   // parent
     {
+        trace_ServerClosingSocket(0, s[1]);
         Sock_Close(s[1]);
         BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
 
@@ -91,6 +92,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
 
     // child code here
 
+    trace_EngineClosingSocket(0, s[0]);
     Sock_Close(s[0]);
 
     if (SetUser(s_opts.serviceAccountUID, s_opts.serviceAccountGID) != 0)

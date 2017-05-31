@@ -4503,6 +4503,36 @@ FILE_EVENTD1(45355, trace_ProcessSubscribeResponseEnumerationContext_TimedOutReq
 #else
 #define trace_Strand_Action(a0, a1, a2) trace_Strand_Action_Impl(0, 0, a0, scs(a1), scs(a2))
 #endif
+FILE_EVENT0(45356, trace_EngineCredentialsVerified_Impl, LOG_DEBUG, PAL_T("Engine credentials verified"))
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_EngineCredentialsVerified() trace_EngineCredentialsVerified_Impl(__FILE__, __LINE__)
+#else
+#define trace_EngineCredentialsVerified() trace_EngineCredentialsVerified_Impl(0, 0)
+#endif
+FILE_EVENT2(45357, trace_ServerClosingSocket_Impl, LOG_DEBUG, PAL_T("Server closing socket (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_ServerClosingSocket(a0, a1) trace_ServerClosingSocket_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_ServerClosingSocket(a0, a1) trace_ServerClosingSocket_Impl(0, 0, a0, a1)
+#endif
+FILE_EVENT2(45358, trace_EngineClosingSocket_Impl, LOG_DEBUG, PAL_T("Engine closing socket (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_EngineClosingSocket(a0, a1) trace_EngineClosingSocket_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_EngineClosingSocket(a0, a1) trace_EngineClosingSocket_Impl(0, 0, a0, a1)
+#endif
+FILE_EVENT2(45359, trace_EngineEstablishingSocket_Impl, LOG_DEBUG, PAL_T("Engine establishing socket with server (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_EngineEstablishingSocket(a0, a1) trace_EngineEstablishingSocket_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_EngineEstablishingSocket(a0, a1) trace_EngineEstablishingSocket_Impl(0, 0, a0, a1)
+#endif
+FILE_EVENT2(45360, trace_ServerEstablishingSocket_Impl, LOG_DEBUG, PAL_T("Server establishing socket with engine (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_ServerEstablishingSocket(a0, a1) trace_ServerEstablishingSocket_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_ServerEstablishingSocket(a0, a1) trace_ServerEstablishingSocket_Impl(0, 0, a0, a1)
+#endif
 FILE_EVENTD3(55000, trace_Strand_Action_Impl, LOG_VERBOSE, PAL_T("Strand %p(%s), action: %s"), Strand *, const char *, const char *)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_StrandFlags(a0, a1, a2, a3, a4, a5, a6, a7, a8) trace_StrandFlags_Impl(__FILE__, __LINE__, a0, scs(a1), a2, a3, a4, a5, a6, a7, a8)

@@ -263,7 +263,7 @@ static const MessageDeclaration allMessages[] = {
     {invokeMessageFields,               sizeof(InvokeReq),              MI_TRUE}, /* ShellConnectReqTag */
 #endif
     {pullMessageFields,                 sizeof(PullReq),                MI_TRUE},
-    {emptyMessageFields,                sizeof(CreateAgentReq),         MI_TRUE},
+    {emptyMessageFields,                sizeof(CreateAgentMsg),         MI_FALSE},
     {postSocketFileFields,              sizeof(PostSocketFile),         MI_TRUE},
     {socketMaintenanceFields,           sizeof(SocketMaintenance),      MI_TRUE},
 };
@@ -804,7 +804,7 @@ const PAL_Char* _MsgNames[] = {
     PAL_T("ShellCommandReq(invoke)"),
 #endif
     PAL_T("PullReq"),
-    PAL_T("CreateAgentReq"),
+    PAL_T("CreateAgentMsg"),
     PAL_T("PostSocketFile"),
     PAL_T("SocketMaintenance"),
 };

@@ -315,10 +315,10 @@ void MessagePrint(const Message* msg, FILE* os)
             }
             break;
 
-        case CreateAgentReqTag:
+        case CreateAgentMsgTag:
             {
-                const CreateAgentReq* m = (const CreateAgentReq*)msg;
-                CreateAgentReq_Print(m, os);
+                const CreateAgentMsg* m = (const CreateAgentMsg*)msg;
+                CreateAgentMsg_Print(m, os);
             }
             break;
 
@@ -648,20 +648,22 @@ void PullReq_Print(
     _Message_Print(msg, os, "PullReq", fields);
 }
 
-void CreateAgentReq_Print(
-    const CreateAgentReq* msg,
+void CreateAgentMsg_Print(
+    const CreateAgentMsg* msg,
     FILE* os)
 {
-    typedef CreateAgentReq Self;
+    typedef CreateAgentMsg Self;
     static const Field fields[] =
     {
         {"tag", FT_UINT32, offsetof(Self, base.tag)},
         {"operationId", FT_UINT64, offsetof(Self, base.operationId)},
+        {"type", FT_UINT32, offsetof(Self, type)},
         {"uid", FT_UINT32, offsetof(Self, uid)},
         {"gid", FT_UINT32, offsetof(Self, gid)},
+        {"pid", FT_UINT32, offsetof(Self, pid)},
         {NULL, 0, 0},
     };
-    _Message_Print(msg, os, "CreateAgentReq", fields);
+    _Message_Print(msg, os, "CreateAgentMsg", fields);
 }
 
 void PostSocketFile_Print(

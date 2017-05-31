@@ -8,6 +8,9 @@
 */
 
 #include <assert.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "protocol.h"
 #include <sock/addr.h>
 #include <sock/sock.h>
@@ -16,6 +19,7 @@
 #include <base/log.h>
 #include <base/result.h>
 #include <base/user.h>
+#include <base/paths.h>
 #include <pal/strings.h>
 #include <pal/format.h>
 #include <pal/file.h>
@@ -977,32 +981,25 @@ static MI_Boolean _SendSocketMaintenanceMsg(
     return retVal;
 }
 
-static MI_Boolean _SendCreateAgentReq(
+static MI_Boolean _SendCreateAgentMsg(
     ProtocolSocket* h,
+    CreateAgentMsgType type,
     uid_t uid,
-    gid_t gid)
+    gid_t gid,
+    pid_t pid)
 {
-    CreateAgentReq* req;
+    CreateAgentMsg* req;
     MI_Boolean retVal = MI_TRUE;
 
-    req = CreateAgentReq_New(uid, gid);
+    req = CreateAgentMsg_New(type);
 
     if (!req)
         return MI_FALSE;
 
-/*
-    req->sock = s;
+    req->uid = uid;
+    req->gid = gid;
+    req->pid = pid;
 
-    if (message && *message)
-    {
-        req->message = Batch_Strdup(req->base.batch, message);
-        if (!req->message)
-        {
-            SocketMaintenance_Release(req);
-            return MI_FALSE;
-        }
-    }
-    */
     /* send message */
     {
         DEBUG_ASSERT(h->message == NULL);
@@ -1014,9 +1011,139 @@ static MI_Boolean _SendCreateAgentReq(
         retVal = _RequestCallbackWrite(h);
     }
 
-    CreateAgentReq_Release(req);
+    CreateAgentMsg_Release(req);
 
     return retVal;
+}
+
+static MI_Boolean _ProcessCreateAgentMsg(
+    ProtocolSocket* handler,
+    Message *msg)
+{
+    CreateAgentMsg* agentMsg;
+    int logfd = INVALID_SOCK;
+    ProtocolBase* protocolBase = (ProtocolBase*)handler->base.data;
+
+    if (msg->tag != CreateAgentMsgTag)
+        return MI_FALSE;
+
+    agentMsg = (CreateAgentMsg*) msg;
+
+    if (CreateAgentMsgRequest == agentMsg->type)
+    {
+        /* create/open log file for agent */
+        {
+            char path[PAL_MAX_PATH_SIZE];
+
+            if (0 != FormatLogFileName(agentMsg->uid, agentMsg->gid, path))
+            {
+                trace_CannotFormatLogFilename();
+                return MI_FALSE;
+            }
+
+            /* Create/open fiel with permisisons 644 */
+            logfd = open(path, O_WRONLY|O_CREAT|O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+            if (logfd == INVALID_SOCK)
+            {
+                trace_CreateLogFile_Failed(scs(path), (int)errno);
+                return MI_FALSE;
+            }
+        }
+
+        {
+            pid_t child;
+            int fdLimit;
+            int fd;
+            char param_sock[32];
+            char param_logfd[32];
+            const char *agentProgram = OMI_GetPath(ID_AGENTPROGRAM);
+            char realAgentProgram[PATH_MAX];
+            const char *destDir = OMI_GetPath(ID_DESTDIR);
+            char realDestDir[PATH_MAX];
+            const char *provDir = OMI_GetPath(ID_PROVIDERDIR);
+            char realProvDir[PATH_MAX];
+            char *ret;
+
+            ret = realpath(agentProgram, realAgentProgram);
+            if (ret == 0)
+                return MI_FALSE;
+            ret = realpath(destDir, realDestDir);
+            if (ret == 0)
+                return MI_FALSE;
+            ret = realpath(provDir, realProvDir);
+            if (ret == 0)
+                return MI_FALSE;
+
+            /* prepare parameter:
+               socket fd to attach */
+            Snprintf(param_sock, sizeof(param_sock), "%d", (int)handler->base.sock);
+            Snprintf(param_logfd, sizeof(param_logfd), "%d", (int)logfd);
+
+            child = fork();
+
+            if (child < 0)
+                return MI_FALSE;  /* Failed */
+
+            if (child > 0)
+            {
+                MI_Boolean r = MI_TRUE; //= _SendCreateAgentMsg(handler, CreateAgentMsgResponse, agentMsg->uid, agentMsg->gid, child);
+
+//                sleep(2);
+                trace_ServerClosingSocket(handler, handler->base.sock);
+                Selector_RemoveHandler(protocolBase->selector, &(handler->base));
+                _ProtocolSocket_Cleanup(handler);
+                Sock_Close(logfd);
+                return r;
+            }
+
+            /* We are in child process here */
+
+            /* switch user */
+            if (0 != SetUser(agentMsg->uid,agentMsg->gid))
+            {
+                _exit(1);
+            }
+
+            /* Close all open file descriptors except provided socket
+               (Some systems have UNLIMITED of 2^64; limit to something reasonable) */
+
+            fdLimit = getdtablesize();
+            if (fdLimit > 2500 || fdLimit < 0)
+            {
+                fdLimit = 2500;
+            }
+
+            /* ATTN: close first 3 also! Left for debugging only */
+            for (fd = 3; fd < fdLimit; ++fd)
+            {
+                if (fd != handler->base.sock && fd != logfd)
+                    close(fd);
+            }
+
+            execl(realAgentProgram,
+                  realAgentProgram,
+                  param_sock,
+                  param_logfd,
+                  "--destdir",
+                  realDestDir,
+                  "--providerdir",
+                  realProvDir,
+                  "--loglevel",
+                  Log_GetLevelString(Log_GetLevel()),
+                  NULL);
+
+            trace_AgentLaunch_Failed(scs(realAgentProgram), errno);
+            _exit(1);
+            // return -1;  /* never get here */
+        }
+    }
+
+    if (CreateAgentMsgResponse == agentMsg->type)
+    {
+        return MI_TRUE;
+    }
+
+    return MI_FALSE;
 }
 
 static MI_Boolean _ProcessSocketMaintenanceMessage(
@@ -1037,6 +1164,7 @@ static MI_Boolean _ProcessSocketMaintenanceMessage(
         DEBUG_ASSERT(handler->engineAuthState == PRT_AUTH_WAIT_CONNECTION_REQUEST);
         if (Strncmp(sockMsg->message, protocolBase->expectedSecretString, S_SECRET_STRING_LENGTH) == 0)
         {
+            trace_EngineCredentialsVerified();
             handler->engineAuthState = PRT_AUTH_OK;
         }
         else
@@ -1283,7 +1411,13 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
         }
         else if (msg->tag == SocketMaintenanceTag)
         {
+            trace_ServerEstablishingSocket(handler, handler->base.sock);
             if( _ProcessSocketMaintenanceMessage(handler, msg) )
+                ret = PRT_CONTINUE;
+        }
+        else if (msg->tag == CreateAgentMsgTag)
+        {
+            if( _ProcessCreateAgentMsg(handler, msg) )
                 ret = PRT_CONTINUE;
         }
         else if (PRT_AUTH_OK != handler->engineAuthState)
@@ -1326,6 +1460,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                                 trace_SocketConnectorFailed(s_socketFile);
                                 return PRT_RETURN_FALSE;
                             }
+                            trace_EngineEstablishingSocket(handler, s);
                         }
 
                         handler->base.sock = s;
@@ -1354,11 +1489,13 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                             handler->clientAuthState = PRT_AUTH_OK;
 
                             // close socket to server
+                            trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
                         }
                         else if (binMsg->result == MI_RESULT_ACCESS_DENIED)
                         {
                             // close socket to server
+                            trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
                         }
                         else
@@ -2326,18 +2463,21 @@ static MI_Result _SendIN_IO_thread(
 
 MI_Result Protocol_New_Agent_Request(
     ProtocolSocketAndBase** selfOut,
-    Selector *selector,
+    const AgentMgr* agentMgr,
+    InteractionOpenParams *params,
     uid_t uid,
     gid_t gid)
 {
     MI_Result r;
-    InteractionOpenParams params;
     Sock s;
 
     ProtocolSocketAndBase *protocolSocketAndBase;
 
-    r = _ProtocolSocketAndBase_New( STRAND_DEBUG(ProtocolConnector) &protocolSocketAndBase, &params, selector, NULL, NULL, 
-                                    PRT_TYPE_CONNECTOR );
+    r = _ProtocolSocketAndBase_New( STRAND_DEBUG(ProtocolFromSocket) &protocolSocketAndBase, 
+                                    params, agentMgr->selector, 
+                                    NULL, 
+                                    NULL, 
+                                    PRT_TYPE_FROM_SOCKET );
     if( r != MI_RESULT_OK )
         return r;
 
@@ -2351,13 +2491,14 @@ MI_Result Protocol_New_Agent_Request(
     }
 
     ProtocolSocket* h = &protocolSocketAndBase->protocolSocket;
+    trace_EngineEstablishingSocket(h, s);
 
     h->base.sock = s;
     h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
     h->clientAuthState = PRT_AUTH_OK;
-    h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
+    h->engineAuthState = PRT_AUTH_OK;
 
-    r = _AddProtocolSocket_Handler(selector, h);
+    r = _AddProtocolSocket_Handler(agentMgr->selector, h);
 
     if (r != MI_RESULT_OK)
     {
@@ -2368,15 +2509,15 @@ MI_Result Protocol_New_Agent_Request(
 
     if (!_SendSocketMaintenanceMsg(h, SocketMaintenanceStartup, s_secretString, INVALID_SOCK))
     {
-        Selector_RemoveHandler(selector, &h->base);
+        Selector_RemoveHandler(agentMgr->selector, &h->base);
         Sock_Close(s);
         _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
         return MI_RESULT_FAILED;
     }
 
-    if (!_SendCreateAgentReq(h, uid, gid))
+    if (!_SendCreateAgentMsg(h, CreateAgentMsgRequest, uid, gid, 0))
     {
-        Selector_RemoveHandler(selector, &h->base);
+        Selector_RemoveHandler(agentMgr->selector, &h->base);
         Sock_Close(s);
         _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
         return MI_RESULT_FAILED;

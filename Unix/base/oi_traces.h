@@ -354,6 +354,16 @@ OI_EVENT("Invalid engine credentials")
 void trace_InvalidEngineCredentials();
 OI_EVENT("Engine credentials have not been received")
 void trace_EngineCredentialsNotReceived();
+OI_EVENT("Engine credentials verified")
+void trace_EngineCredentialsVerified();
+OI_EVENT("Server closing socket (%p, %d)")
+void trace_ServerClosingSocket(void *handle, int socket);
+OI_EVENT("Engine closing socket (%p, %d)")
+void trace_EngineClosingSocket(void *handle, int socket);
+OI_EVENT("Server establishing socket with engine (%p, %d)")
+void trace_ServerEstablishingSocket(void *handle, int socket);
+OI_EVENT("Engine establishing socket with server (%p, %d)")
+void trace_EngineEstablishingSocket(void *handle, int socket);
 
 /******************************** WARNINGS ***********************************/
 

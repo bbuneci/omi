@@ -873,23 +873,15 @@ static pid_t _SpawnAgentProcess(
 
 static MI_Result _RequestSpawnOfAgentProcess(
     ProtocolSocketAndBase** selfOut,
-    Selector *selector,
+    const AgentMgr* agentMgr,
+    InteractionOpenParams *params,
     uid_t uid,
     gid_t gid)
 {
     MI_Result r;
     
-    r = Protocol_New_Agent_Request(selfOut, selector, uid, gid);
+    r = Protocol_New_Agent_Request(selfOut, agentMgr, params, uid, gid);
 
-/*
-    pid_t child;
-    int fdLimit;
-    int fd;
-    char param_sock[32];
-    char param_logfd[32];
-    char param_idletimeout[32];
-    char *ret;
-*/
     return r;
 }
 
@@ -992,6 +984,9 @@ static AgentElem* _CreateAgent(
     int logfd = -1;
     InteractionOpenParams interactionParams;
 
+    s[0] = INVALID_SOCK;
+    s[1] = INVALID_SOCK;
+
     MI_Uint32 serverType = Selector_GetServerType(self->selector);
 
     if (serverType == 0 /* server */)
@@ -1069,30 +1064,29 @@ static AgentElem* _CreateAgent(
 
         /* Close socket 0 - it will be used by child process */
         Sock_Close(s[0]);
-    }
-    else /* Engine */
-    {
-        if (_RequestSpawnOfAgentProcess(&agent->protocol, self->selector, uid, gid) != MI_RESULT_OK)
-        {
-            trace_CannotSpawnChildProcess();
-            goto failed;
-        }
-    }
-    s[0] = INVALID_SOCK;
+        s[0] = INVALID_SOCK;
 
-    Strand_OpenPrepare(&agent->strand.strand,&interactionParams,NULL,NULL,MI_TRUE);
+        Strand_OpenPrepare(&agent->strand.strand,&interactionParams,NULL,NULL,MI_TRUE);
 
-    if (serverType == 0 /* server */)
-    {
         if( MI_RESULT_OK != ProtocolSocketAndBase_New_AgentConnector(
                 &agent->protocol,
                 self->selector,
                 s[1],
                 &interactionParams ) )
             goto failed;
+        
+        s[1] = INVALID_SOCK;
     }
+    else /* Engine */
+    {
+        Strand_OpenPrepare(&agent->strand.strand,&interactionParams,NULL,NULL,MI_TRUE);
 
-    s[1] = INVALID_SOCK;
+        if (_RequestSpawnOfAgentProcess(&agent->protocol, self, &interactionParams, uid, gid) != MI_RESULT_OK)
+        {
+            trace_CannotSpawnChildProcess();
+            goto failed;
+        }
+    }
 
     trace_AgentItemCreated(agent);
     List_Append(
@@ -1247,6 +1241,7 @@ static MI_Result _SendIdleRequestToAgent(
     Strand_SetDelayFinish(&requestItem->strand.strand);
     Strand_Leave(&requestItem->strand.strand);
 
+    sleep(5);
     result = _SendRequestToAgent_Common( requestItem, &notification->base, NULL );
 
     BinProtocolNotification_Release(notification);

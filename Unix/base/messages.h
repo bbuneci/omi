@@ -75,7 +75,7 @@ typedef enum _MessageTag
     ShellCommandReqTag = 32 | MessageTagIsRequest, /* Basically a InvokeInstanceReqTag */
 #endif
     PullRequestTag = 33 | MessageTagIsRequest,
-    CreateAgentReqTag = 34,
+    CreateAgentMsgTag = 34,
     PostSocketFileTag = 35,
     SocketMaintenanceTag = 36
 }
@@ -1235,6 +1235,9 @@ MI_Boolean Message_IsInternalMessage( _In_ Message* msg )
     if (SocketMaintenanceTag == msg->tag)
         return MI_TRUE;
 
+    if (CreateAgentMsgTag == msg->tag)
+        return MI_TRUE;
+
     return MI_FALSE;
 }
 
@@ -1551,49 +1554,61 @@ MI_INLINE void __ProtocolEventConnect_Release(
 /*
 **==============================================================================
 **
-** CreateAgentReq
+** CreateAgentMsg
 **
 **     Request from Engine to Server, to create a new agent
 **
 **==============================================================================
 */
 
-#define MAX_AGENT_PARAMS 10
-typedef struct _CreateAgentReq
+typedef enum _CreateAgentMsgType
+{
+    CreateAgentMsgRequest = 0,
+    CreateAgentMsgResponse = 1
+}
+CreateAgentMsgType;
+
+typedef struct _CreateAgentMsg
 {
     Message         base;
+    MI_Uint32       type;
     MI_Uint32       uid;
     MI_Uint32       gid;
+    MI_Uint32       pid;
 }
-CreateAgentReq;
+CreateAgentMsg;
 
-#define CreateAgentReq_New(operationId, flags) \
-    __CreateAgentReq_New(operationId, flags, CALLSITE)
+#define CreateAgentMsg_New(type) \
+    __CreateAgentMsg_New(type, CALLSITE)
 
-MI_INLINE CreateAgentReq* __CreateAgentReq_New(
-    MI_Uint64 operationId,
-    MI_Uint32 flags,
+#define SocketMaintenance_New(type) \
+    __SocketMaintenance_New(type, CALLSITE)
+
+MI_INLINE CreateAgentMsg* __CreateAgentMsg_New(
+    CreateAgentMsgType type,
     CallSite cs)
 {
-    return (CreateAgentReq*)__Message_New(
-        CreateAgentReqTag,
-        sizeof(CreateAgentReq),
-        operationId,
-        flags,
+    CreateAgentMsg* res = (CreateAgentMsg*)__Message_New(
+        CreateAgentMsgTag, sizeof(CreateAgentMsg), 0, 0,
         cs);
+
+    if (res)
+        res->type = type;
+
+    return res;
 }
 
-#define CreateAgentReq_Release(self) \
-    __CreateAgentReq_Release(self, CALLSITE)
+#define CreateAgentMsg_Release(self) \
+    __CreateAgentMsg_Release(self, CALLSITE)
 
-MI_INLINE void __CreateAgentReq_Release(
-    CreateAgentReq* self,
+MI_INLINE void __CreateAgentMsg_Release(
+    CreateAgentMsg* self,
     CallSite cs)
 {
     __Message_Release(&self->base, cs);
 }
 
-void CreateAgentReq_Print(const CreateAgentReq* msg, FILE* os);
+void CreateAgentMsg_Print(const CreateAgentMsg* msg, FILE* os);
 
 /*
 **==============================================================================
