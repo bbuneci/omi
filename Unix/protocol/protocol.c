@@ -24,6 +24,7 @@
 #include <pal/format.h>
 #include <pal/file.h>
 #include <pal/sleep.h>
+#include <pal/hashmap.h>
 
 //#define  ENABLE_TRACING 1
 #ifdef ENABLE_TRACING
@@ -55,6 +56,7 @@
 static const MI_Uint32 _MAGIC = 0xC764445E;
 static char s_socketFile[PAL_MAX_PATH_SIZE];
 static char s_secretString[S_SECRET_STRING_LENGTH];
+static HashMap s_protocolSocketTracker;
 
 /*
 **==============================================================================
@@ -80,6 +82,14 @@ typedef enum _Protocol_CallbackResult
 }
 Protocol_CallbackResult;
 
+typedef struct _TrackerBucket
+{
+    struct _TrackerBucket *next;
+    PAL_Uint32 key;
+    PVOID value;
+}
+TrackerBucket;
+
 /* Forward declaration */
 static void _PrepareMessageForSending(
     ProtocolSocket *handler);
@@ -90,7 +100,11 @@ static MI_Boolean _RequestCallbackWrite(
 static MI_Result _ProtocolSocketAndBase_Delete(
     ProtocolSocketAndBase* self);
 
-
+static MI_Result _ProtocolSocketAndBase_New_Server_Connection(
+    ProtocolSocketAndBase** selfOut,
+    Selector *selector,
+    InteractionOpenParams *params,
+    Sock *s);
 
 /*
 **==============================================================================
@@ -196,6 +210,8 @@ MI_Result _AddProtocolSocket_Handler(
 
 static void _ProtocolSocket_Cleanup(ProtocolSocket* handler)
 {
+    ProtocolBase* protocolBase;
+
     if(handler->closeOtherScheduled)
         return;
 
@@ -226,7 +242,10 @@ static void _ProtocolSocket_Cleanup(ProtocolSocket* handler)
     /* Mark handler as closed */
     handler->base.sock = INVALID_SOCK;
 
-    Strand_ScheduleClose( &handler->strand );
+    // skip for engine
+    protocolBase = (ProtocolBase*)handler->base.data;
+    if (!protocolBase->forwardRequests)
+        Strand_ScheduleClose( &handler->strand );
 }
 
 /*
@@ -446,6 +465,75 @@ static StrandFT _ProtocolSocket_FT = {
     _ProtocolSocket_Aux_ConnectEvent,
     NULL,
     NULL };
+
+/**************** protocolSocketTracker-support **********************************************************/
+static size_t _ProtocolSocketTrackerTestHash(const HashBucket *b)
+{
+    TrackerBucket *bucket = (TrackerBucket*) b;
+    size_t h = 0;
+    PAL_Uint32 key = bucket->key;
+    h = key % 1024;
+    return h;
+}
+
+static int _ProtocolSocketTrackerTestEqual(const HashBucket *b1, const HashBucket *b2)
+{
+    TrackerBucket *bucket1 = (TrackerBucket*) b1;
+    TrackerBucket *bucket2 = (TrackerBucket*) b2;
+    return bucket1->key == bucket2->key;
+}
+
+static void _ProtocolSocketTrackerTestRelease(HashBucket *b)
+{
+    return;
+}
+
+static MI_Result _ProtocolSocketTrackerAddElement(Sock s, ProtocolSocket *protocolSocket)
+{
+    TrackerBucket *b;
+    int r;
+
+    b = (TrackerBucket*)PAL_Calloc(1, sizeof(TrackerBucket));
+    if (b == NULL)
+        return MI_RESULT_FAILED;
+
+    b->key = (int)s;
+    b->value = (void*)protocolSocket;
+
+    r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
+    trace_TrackerHashMapAdd(protocolSocket, s);
+
+    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
+}
+
+static MI_Result _ProtocolSocketTrackerRemoveElement(Sock s)
+{
+    TrackerBucket b;
+    int r;
+
+    b.key = (int)s;
+
+    r = HashMap_Remove(&s_protocolSocketTracker, (HashBucket*)&b);
+    trace_TrackerHashMapRemove(s);
+
+    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
+}
+
+static void* _ProtocolSocketTrackerGetElement(Sock s)
+{
+    TrackerBucket b;
+    TrackerBucket *r;
+
+    b.key = (int)s;
+
+    r = (TrackerBucket*) HashMap_Find(&s_protocolSocketTracker, (HashBucket*)&b);
+
+    if (r == NULL)
+        return NULL;
+
+    trace_TrackerHashMapFind(r->value, s);
+    return r->value;
+}
 
 /**************** Auth-support **********************************************************/
 /* remove auth file and free auth data */
@@ -931,8 +1019,10 @@ static MI_Boolean _ProcessEngineAuthMessage(
             
         Strlcpy(s_socketFile, sockMsg->sockFilePath, PAL_MAX_PATH_SIZE);
         Strlcpy(s_secretString, sockMsg->secretString, S_SECRET_STRING_LENGTH);
-        
-        return MI_TRUE;
+        trace_ServerInfoReceived();
+
+        return HashMap_Init(&s_protocolSocketTracker, 1, _ProtocolSocketTrackerTestHash, _ProtocolSocketTrackerTestEqual, 
+                            _ProtocolSocketTrackerTestRelease);
     }
 
     return MI_FALSE;
@@ -1078,6 +1168,9 @@ static MI_Boolean _ProcessCreateAgentMsg(
                socket fd to attach */
             Snprintf(param_sock, sizeof(param_sock), "%d", (int)handler->base.sock);
             Snprintf(param_logfd, sizeof(param_logfd), "%d", (int)logfd);
+
+            Sock_SetCloseOnExec(handler->base.sock, MI_FALSE);
+            Sock_SetCloseOnExec(logfd, MI_FALSE);
 
             child = fork();
 
@@ -1447,31 +1540,28 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                         Sock s = binMsg->forwardSock;
                         Sock forwardSock = handler->base.sock;
+                        _ProtocolSocketTrackerAddElement(forwardSock, handler);
 
-                        DEBUG_ASSERT( strlen(s_socketFile) > 0 && strlen(s_secretString) > 0);
+                        DEBUG_ASSERT(strlen(s_socketFile) > 0 && strlen(s_secretString) > 0);
+                        DEBUG_ASSERT(s == INVALID_SOCK);
 
-                        if (s == INVALID_SOCK)
                         /* Create connector socket */
                         {
-                            // Connect to server.
-                            r = _CreateConnector(&s, s_socketFile);
-                            if (r != MI_RESULT_OK && r != MI_RESULT_WOULD_BLOCK)
+                            ProtocolSocketAndBase *newSocketAndBase;
+
+                            r = _ProtocolSocketAndBase_New_Server_Connection(&newSocketAndBase, protocolBase->selector, NULL, &s);
+                            if( r != MI_RESULT_OK )
                             {
-                                trace_SocketConnectorFailed(s_socketFile);
                                 return PRT_RETURN_FALSE;
                             }
-                            trace_EngineEstablishingSocket(handler, s);
+
+                            handler = &newSocketAndBase->protocolSocket;
+                            newSocketAndBase->internalProtocolBase.forwardRequests = MI_TRUE;
+                            _ProtocolSocketTrackerAddElement(s, handler);
                         }
 
-                        handler->base.sock = s;
                         handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
-                        handler->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
-
-                        if (!_SendSocketMaintenanceMsg(handler, SocketMaintenanceStartup, s_secretString, forwardSock))
-                        {
-                            return PRT_RETURN_FALSE;
-                        }
-
+                        
                         if (_SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, forwardSock) )                
                         {
                             ret = PRT_CONTINUE;
@@ -1483,30 +1573,36 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                         Sock s = binMsg->forwardSock;
                         Sock forwardSock = INVALID_SOCK;
+                        ProtocolSocket *newHandler = _ProtocolSocketTrackerGetElement(s);
+                        if (newHandler == NULL)
+                        {
+                            return PRT_RETURN_FALSE;
+                        }
 
                         if (binMsg->result == MI_RESULT_OK)
                         {
-                            handler->clientAuthState = PRT_AUTH_OK;
+                            newHandler->clientAuthState = PRT_AUTH_OK;
 
                             // close socket to server
                             trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
+                            _ProtocolSocketTrackerRemoveElement(handler->base.sock);
                         }
                         else if (binMsg->result == MI_RESULT_ACCESS_DENIED)
                         {
                             // close socket to server
                             trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
+                            _ProtocolSocketTrackerRemoveElement(handler->base.sock);
                         }
                         else
                         {
                             forwardSock = handler->base.sock;
                         }
 
-                        handler->base.sock = s;
-                        handler->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
+                        handler = newHandler;
 
-                        if( s > 0 && _SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock) )
+                        if(_SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock))
                         {
                             ret = PRT_CONTINUE;
                         }
@@ -2461,6 +2557,84 @@ static MI_Result _SendIN_IO_thread(
     return MI_RESULT_OK;
 }
 
+// Establish new connection from Engine to Server
+static MI_Result _ProtocolSocketAndBase_New_Server_Connection(
+    ProtocolSocketAndBase** selfOut,
+    Selector *selector,
+    InteractionOpenParams *params,
+    Sock *s)
+{
+    MI_Result r;
+    ProtocolSocketAndBase *protocolSocketAndBase;
+    StrandFlags flags;
+
+    protocolSocketAndBase = (ProtocolSocketAndBase*)PAL_Calloc(1, sizeof(ProtocolSocketAndBase )); 
+
+    if (!protocolSocketAndBase)
+        return MI_RESULT_FAILED;
+
+    flags = params ? STRAND_FLAG_ENTERSTRAND : STRAND_FLAG_NOINTERACTION;
+    
+    Strand_Init( STRAND_DEBUG(ProtocolFromSocket) &protocolSocketAndBase->protocolSocket.strand, 
+                 &_ProtocolSocket_FT, flags, params);
+    protocolSocketAndBase->protocolSocket.refCount = 1; //ref associated with Strand. Released on Strand_Finish
+    protocolSocketAndBase->protocolSocket.closeOtherScheduled = MI_FALSE;
+    protocolSocketAndBase->protocolSocket.base.callback = NULL;
+
+    r = _ProtocolBase_Init(&protocolSocketAndBase->internalProtocolBase, selector, NULL, NULL, PRT_TYPE_FROM_SOCKET);
+    if( r != MI_RESULT_OK )
+        return r;
+
+    protocolSocketAndBase->protocolSocket.base.data = &protocolSocketAndBase->internalProtocolBase;
+
+    if (params)
+    {
+        // ProtocolSocketAndBase objects need to delay wait until protocol run is done
+        Strand_SetDelayFinish(&protocolSocketAndBase->protocolSocket.strand);
+
+        Strand_Leave( &protocolSocketAndBase->protocolSocket.strand );
+    }
+
+    // Connect to server.
+    r = _CreateConnector(s, s_socketFile);
+    if (r != MI_RESULT_OK && r != MI_RESULT_WOULD_BLOCK)
+    {
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        trace_SocketConnectorFailed(s_socketFile);
+        return r;
+    }
+
+    ProtocolSocket* h = &protocolSocketAndBase->protocolSocket;
+    trace_EngineEstablishingSocket(h, *s);
+
+    h->base.sock = *s;
+    h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
+    h->base.callback = _RequestCallback;
+    h->clientAuthState = PRT_AUTH_OK;
+    h->engineAuthState = PRT_AUTH_OK;
+
+    r = _AddProtocolSocket_Handler(selector, h);
+
+    if (r != MI_RESULT_OK)
+    {
+        Sock_Close(*s);
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        return r;
+    }
+
+    if (!_SendSocketMaintenanceMsg(h, SocketMaintenanceStartup, s_secretString, INVALID_SOCK))
+    {
+        Selector_RemoveHandler(selector, &h->base);
+        Sock_Close(*s);
+        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        return MI_RESULT_FAILED;
+    }
+
+    *selfOut = protocolSocketAndBase;
+
+    return MI_RESULT_OK;
+}
+
 MI_Result Protocol_New_Agent_Request(
     ProtocolSocketAndBase** selfOut,
     const AgentMgr* agentMgr,
@@ -2471,59 +2645,21 @@ MI_Result Protocol_New_Agent_Request(
     MI_Result r;
     Sock s;
 
-    ProtocolSocketAndBase *protocolSocketAndBase;
+    ProtocolSocketAndBase *socketAndBase = NULL;
 
-    r = _ProtocolSocketAndBase_New( STRAND_DEBUG(ProtocolFromSocket) &protocolSocketAndBase, 
-                                    params, agentMgr->selector, 
-                                    NULL, 
-                                    NULL, 
-                                    PRT_TYPE_FROM_SOCKET );
+    r = _ProtocolSocketAndBase_New_Server_Connection(&socketAndBase, agentMgr->selector, params, &s);
     if( r != MI_RESULT_OK )
         return r;
 
-    // Connect to server.
-    r = _CreateConnector(&s, s_socketFile);
-    if (r != MI_RESULT_OK && r != MI_RESULT_WOULD_BLOCK)
+    if (!_SendCreateAgentMsg(&socketAndBase->protocolSocket, CreateAgentMsgRequest, uid, gid, 0))
     {
-        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
-        trace_SocketConnectorFailed(s_socketFile);
-        return r;
-    }
-
-    ProtocolSocket* h = &protocolSocketAndBase->protocolSocket;
-    trace_EngineEstablishingSocket(h, s);
-
-    h->base.sock = s;
-    h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
-    h->clientAuthState = PRT_AUTH_OK;
-    h->engineAuthState = PRT_AUTH_OK;
-
-    r = _AddProtocolSocket_Handler(agentMgr->selector, h);
-
-    if (r != MI_RESULT_OK)
-    {
+        Selector_RemoveHandler(agentMgr->selector, &socketAndBase->protocolSocket.base);
         Sock_Close(s);
-        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
-        return r;
-    }
-
-    if (!_SendSocketMaintenanceMsg(h, SocketMaintenanceStartup, s_secretString, INVALID_SOCK))
-    {
-        Selector_RemoveHandler(agentMgr->selector, &h->base);
-        Sock_Close(s);
-        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
+        _ProtocolSocketAndBase_Delete(socketAndBase);
         return MI_RESULT_FAILED;
     }
 
-    if (!_SendCreateAgentMsg(h, CreateAgentMsgRequest, uid, gid, 0))
-    {
-        Selector_RemoveHandler(agentMgr->selector, &h->base);
-        Sock_Close(s);
-        _ProtocolSocketAndBase_Delete(protocolSocketAndBase);
-        return MI_RESULT_FAILED;
-    }
-
-    *selfOut = protocolSocketAndBase;
+    *selfOut = socketAndBase;
 
     return MI_RESULT_OK;
 }

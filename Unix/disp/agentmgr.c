@@ -1079,7 +1079,7 @@ static AgentElem* _CreateAgent(
     }
     else /* Engine */
     {
-        Strand_OpenPrepare(&agent->strand.strand,&interactionParams,NULL,NULL,MI_TRUE);
+        Strand_OpenPrepare(&agent->strand.strand, &interactionParams, NULL, NULL, MI_TRUE);
 
         if (_RequestSpawnOfAgentProcess(&agent->protocol, self, &interactionParams, uid, gid) != MI_RESULT_OK)
         {

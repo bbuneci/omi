@@ -354,16 +354,6 @@ OI_EVENT("Invalid engine credentials")
 void trace_InvalidEngineCredentials();
 OI_EVENT("Engine credentials have not been received")
 void trace_EngineCredentialsNotReceived();
-OI_EVENT("Engine credentials verified")
-void trace_EngineCredentialsVerified();
-OI_EVENT("Server closing socket (%p, %d)")
-void trace_ServerClosingSocket(void *handle, int socket);
-OI_EVENT("Engine closing socket (%p, %d)")
-void trace_EngineClosingSocket(void *handle, int socket);
-OI_EVENT("Server establishing socket with engine (%p, %d)")
-void trace_ServerEstablishingSocket(void *handle, int socket);
-OI_EVENT("Engine establishing socket with server (%p, %d)")
-void trace_EngineEstablishingSocket(void *handle, int socket);
 
 /******************************** WARNINGS ***********************************/
 
@@ -1672,6 +1662,25 @@ OI_EVENT("_InteractionWsmanEnum_Left_ConnectionDataTimeout: CD notifier for EC %
 void trace_WSManEnumerationContext_CD_Timeout_notifier(void* enumCtx);
 OI_EVENT("_ProcessSubscribeResponseEnumerationContext: selfEC (%p) Ignoring response to timed out request.")
 void trace_ProcessSubscribeResponseEnumerationContext_TimedOutRequest(void * selfEC);
+OI_EVENT("Engine credentials verified")
+void trace_EngineCredentialsVerified();
+OI_EVENT("Server closing socket (%p, %d)")
+void trace_ServerClosingSocket(void *handle, int socket);
+OI_EVENT("Engine closing socket (%p, %d)")
+void trace_EngineClosingSocket(void *handle, int socket);
+OI_EVENT("Server establishing socket with engine (%p, %d)")
+void trace_ServerEstablishingSocket(void *handle, int socket);
+OI_EVENT("Engine establishing socket with server (%p, %d)")
+void trace_EngineEstablishingSocket(void *handle, int socket);
+OI_EVENT("Server connection info received")
+void trace_ServerInfoReceived();
+OI_EVENT("Tracker hash map added (%p, %d)")
+void trace_TrackerHashMapAdd(void *handle, int socket);
+OI_EVENT("Tracker hash map removeded (%d)")
+void trace_TrackerHashMapRemove(int socket);
+OI_EVENT("Tracker hash map found (%p, %d)")
+void trace_TrackerHashMapFind(void *handle, int socket);
+
 
 /****************************** VERBOSE events ******************************/
 

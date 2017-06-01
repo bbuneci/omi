@@ -4533,6 +4533,30 @@ FILE_EVENT2(45360, trace_ServerEstablishingSocket_Impl, LOG_DEBUG, PAL_T("Server
 #else
 #define trace_ServerEstablishingSocket(a0, a1) trace_ServerEstablishingSocket_Impl(0, 0, a0, a1)
 #endif
+FILE_EVENT0(45361, trace_ServerInfoReceived_Impl, LOG_DEBUG, PAL_T("Server connection info received"))
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_ServerInfoReceived() trace_ServerInfoReceived_Impl(__FILE__, __LINE__)
+#else
+#define trace_ServerInfoReceived() trace_ServerInfoReceived_Impl(0, 0)
+#endif
+FILE_EVENT2(45362, trace_TrackerHashMapAdd_Impl, LOG_DEBUG, PAL_T("Tracker hash map added (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_TrackerHashMapAdd(a0, a1) trace_TrackerHashMapAdd_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_TrackerHashMapAdd(a0, a1) trace_TrackerHashMapAdd_Impl(0, 0, a0, a1)
+#endif
+FILE_EVENT1(45363, trace_TrackerHashMapRemove_Impl, LOG_DEBUG, PAL_T("Tracker hash map removeded (%d)"), int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_TrackerHashMapRemove(a0) trace_TrackerHashMapRemove_Impl(__FILE__, __LINE__, a0)
+#else
+#define trace_TrackerHashMapRemove(a0) trace_TrackerHashMapRemove_Impl(0, 0, a0)
+#endif
+FILE_EVENT2(45364, trace_TrackerHashMapFind_Impl, LOG_DEBUG, PAL_T("Tracker hash map found (%p, %d)"), void*, int)
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_TrackerHashMapFind(a0, a1) trace_TrackerHashMapFind_Impl(__FILE__, __LINE__, a0, a1)
+#else
+#define trace_TrackerHashMapFind(a0, a1) trace_TrackerHashMapFind_Impl(0, 0, a0, a1)
+#endif
 FILE_EVENTD3(55000, trace_Strand_Action_Impl, LOG_VERBOSE, PAL_T("Strand %p(%s), action: %s"), Strand *, const char *, const char *)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_StrandFlags(a0, a1, a2, a3, a4, a5, a6, a7, a8) trace_StrandFlags_Impl(__FILE__, __LINE__, a0, scs(a1), a2, a3, a4, a5, a6, a7, a8)
