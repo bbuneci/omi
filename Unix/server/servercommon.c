@@ -201,13 +201,11 @@ static int _SetServiceAccountFromString(const char *account)
     if (strcmp(account, "root") == 0)
     {
         err(ZT("service account cannot be root"));
-        return -1;
     }
 
     if (LookupUser(account, &s_optsPtr->serviceAccountUID, &s_optsPtr->serviceAccountGID) != 0)
     {
         err(ZT("invalid service account:  %T"), account);
-        return -1;
     }
 
     s_optsPtr->serviceAccount = account;
@@ -348,16 +346,14 @@ void GetCommandLineOptions(
         {
             if ( _ParseHttpPortSpecification(&s_optsPtr->httpport, &s_optsPtr->httpport_size, state.arg, CONFIG_HTTPPORT) )
             {
-                err(ZT("bad option argument for --httpport: %s"), 
-                    scs(state.arg));
+                err(ZT("bad option argument for --httpport: %s"), scs(state.arg));
             }
         }
         else if (strcmp(state.opt, "--httpsport") == 0)
         {
             if ( _ParseHttpPortSpecification(&s_optsPtr->httpsport, &s_optsPtr->httpsport_size, state.arg, CONFIG_HTTPSPORT) )
             {
-                err(ZT("bad option argument for --httpsport: %s"), 
-                    scs(state.arg));
+                err(ZT("bad option argument for --httpsport: %s"), scs(state.arg));
             }
         }
         else if (strcmp(state.opt, "--idletimeout") == 0)
@@ -367,8 +363,7 @@ void GetCommandLineOptions(
 
             if (*end != '\0')
             {
-                err(ZT("bad option argument for --idletimeout: %s"), 
-                    scs(state.arg));
+                err(ZT("bad option argument for --idletimeout: %s"), scs(state.arg));
             }
 
             s_optsPtr->idletimeout = x;
@@ -380,8 +375,7 @@ void GetCommandLineOptions(
 
             if (*end != '\0')
             {
-                err(ZT("bad option argument for --livetime: %s"), 
-                    scs(state.arg));
+                err(ZT("bad option argument for --livetime: %s"), scs(state.arg));
             }
 
             s_optsPtr->livetime = x;
@@ -400,16 +394,14 @@ void GetCommandLineOptions(
         {
             if (Log_SetLevelFromString(state.arg) != 0)
             {
-                err(ZT("bad option argument for %s: %s"), 
-                    scs(state.opt), scs(state.arg));
+                err(ZT("bad option argument for %s: %s"), scs(state.opt), scs(state.arg));
             }
         }
         else if (strcmp(state.opt, "--service") == 0)
         {
             if (_SetServiceAccountFromString(state.arg) != 0)
             {
-                err(ZT("bad option argument for %s: %s"), 
-                    scs(state.opt), scs(state.arg));
+                err(ZT("bad option argument for %s: %s"), scs(state.opt), scs(state.arg));
             }
         }
         else if (strcmp(state.opt, "--socketpair") == 0)
@@ -418,8 +410,7 @@ void GetCommandLineOptions(
             long port = Strtol(state.arg, &end, 10);
             if (port == LONG_MIN || port == LONG_MAX)
             {
-                err(ZT("bad option argument for %s: %s"), 
-                    scs(state.opt), scs(state.arg));
+                err(ZT("bad option argument for %s: %s"), scs(state.opt), scs(state.arg));
             }
             s_optsPtr->socketpairPort = port;
 
@@ -436,7 +427,9 @@ void GetCommandLineOptions(
         else if (strncmp(state.opt, "--", 2) == 0 && IsNickname(state.opt+2))
         {
             if (SetPathFromNickname(state.opt+2, state.arg) != 0)
+            {
                 err(ZT("SetPathFromNickname() failed"));
+            }
         }
     }
 
@@ -448,7 +441,9 @@ void OpenLogFile()
     if (s_optsPtr->logstderr)
     {
         if (Log_OpenStdErr() != MI_RESULT_OK)
+        {
             err(ZT("failed to open log file to stderr"));
+        }
     }
     else
     {
@@ -457,7 +452,9 @@ void OpenLogFile()
 
         /* Open the log file */
         if (Log_Open(path) != MI_RESULT_OK)
+        {
             err(PAL_T("failed to open log file: %T"), tcs(path));
+        }
     }
 }
 
@@ -536,7 +533,9 @@ void GetConfigFileOptions()
     /* Open the configuration file */
     conf = Conf_Open(path);
     if (!conf)
+    {
         err(ZT("failed to open configuration file: %s"), scs(path));
+    }
 
     /* For each key=value pair in configuration file */
     for (;;)
@@ -546,7 +545,9 @@ void GetConfigFileOptions()
         int r = Conf_Read(conf, &key, &value);
 
         if (r == -1)
+        {
             err(ZT("%s: %s\n"), path, scs(Conf_Error(conf)));
+        }
 
         if (r == 1)
             break;
@@ -555,16 +556,14 @@ void GetConfigFileOptions()
         {
             if ( _ParseHttpPortSpecification(&s_optsPtr->httpport, &s_optsPtr->httpport_size, value, CONFIG_HTTPPORT) )
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "httpsport") == 0)
         {
             if ( _ParseHttpPortSpecification(&s_optsPtr->httpsport, &s_optsPtr->httpsport_size, value, CONFIG_HTTPSPORT) )
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "idletimeout") == 0)
@@ -574,8 +573,7 @@ void GetConfigFileOptions()
 
             if (*end != '\0')
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
 
             s_optsPtr->idletimeout = x;
@@ -587,8 +585,7 @@ void GetConfigFileOptions()
 
             if (*end != '\0')
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
 
             s_optsPtr->livetime = x;
@@ -609,8 +606,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "httptrace") == 0)
@@ -625,16 +621,14 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "loglevel") == 0)
         {
             if (Log_SetLevelFromString(value) != 0)
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), 
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "sslciphersuite") == 0)
@@ -642,7 +636,9 @@ void GetConfigFileOptions()
             size_t valueLength = strlen(value);
             s_optsPtr->sslCipherSuite = PAL_Malloc(valueLength + 1);
             if (s_optsPtr->sslCipherSuite == NULL)
+            {
                 err(ZT("Out of memory"));
+            }
             Strlcpy(s_optsPtr->sslCipherSuite, value, valueLength+1);
             s_optsPtr->sslCipherSuite[valueLength] = '\0';
         }
@@ -658,8 +654,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "NoSSLv3") == 0)
@@ -674,8 +669,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "NoTLSv1_0") == 0)
@@ -690,8 +684,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "NoTLSv1_1") == 0)
@@ -706,8 +699,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "NoTLSv1_2") == 0)
@@ -722,8 +714,7 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (strcmp(key, "NoSSLCompression") == 0)
@@ -738,14 +729,15 @@ void GetConfigFileOptions()
             }
             else
             {
-                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path),
-                    Conf_Line(conf), scs(key), scs(value));
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
             }
         }
         else if (IsNickname(key))
         {
             if (SetPathFromNickname(key, value) != 0)
+            {
                 err(ZT("SetPathFromNickname() failed"));
+            }
         }
         else if (strcasecmp(key, "NtlmCredsFile") == 0)
         {
@@ -756,8 +748,7 @@ void GetConfigFileOptions()
         }
         else
         {
-            err(ZT("%s(%u): unknown key: %s"), scs(path), Conf_Line(conf), 
-                scs(key));
+            err(ZT("%s(%u): unknown key: %s"), scs(path), Conf_Line(conf), scs(key));
         }
     }
 
@@ -823,10 +814,9 @@ static void _ProcessNoopRequest(_Inout_ InteractionOpenParams*  params)
 
     if( NULL == strand )
     {
-        err(ZT("out of memory"));
         trace_OutOfMemory();
         Strand_FailOpen(params);
-        return;
+        err(ZT("out of memory"));
     }
 
     /* Send NoOp response back */
@@ -834,10 +824,9 @@ static void _ProcessNoopRequest(_Inout_ InteractionOpenParams*  params)
 
     if (!rsp)
     {
-        err(ZT("out of memory"));
         trace_OutOfMemory();
         Strand_FailOpen(params);
-        return;
+        err(ZT("out of memory"));
     }
 
 #if !defined(CONFIG_FAVORSIZE)
@@ -869,7 +858,7 @@ void RequestCallback(
 {
     ServerCallbackData* self = (ServerCallbackData*)interactionParams->callbackData;
     Message* msg = interactionParams->msg;
-    MI_Result result;
+    MI_Result result = MI_RESULT_OK;
 
     DEBUG_ASSERT( NULL != interactionParams );
     DEBUG_ASSERT( NULL != msg );
@@ -938,9 +927,9 @@ void FUNCTION_NEVER_RETURNS info_exit(const ZChar* fmt, ...)
     exit(0);
 }
 
-void InitializeNetwork()
+MI_Result InitializeNetwork()
 {
-    MI_Result r;
+    MI_Result r = MI_RESULT_OK;
 
     /* selector */
     {
@@ -948,7 +937,9 @@ void InitializeNetwork()
         Sock_Start();
 
         if(Selector_Init(&s_dataPtr->selector) != MI_RESULT_OK)
+        {
             err(ZT("Selector_Init() failed"));
+        }
 
         s_dataPtr->selectorInitialized = MI_TRUE;
 
@@ -971,10 +962,14 @@ void InitializeNetwork()
         /* convert it to usec */
         s_dataPtr->disp.agentmgr.provmgr.idleTimeoutUsec = s_optsPtr->idletimeout * 1000000;
     }
+
+    return r;
 }
 
-void WsmanProtocolListen()
+MI_Result WsmanProtocolListen()
 {
+    MI_Result r = MI_RESULT_OK;
+
     /* Set WSMAN options and create WSMAN server */
     s_dataPtr->wsman_size = s_optsPtr->httpport_size + s_optsPtr->httpsport_size;
     if ( s_dataPtr->wsman_size > 0 )
@@ -987,7 +982,6 @@ void WsmanProtocolListen()
     }
 
     {
-        MI_Result r;
         int wsman_count = 0;
         WSMAN_Options options = DEFAULT_WSMAN_OPTIONS;
 #if !defined(CONFIG_FAVORSIZE)
@@ -1042,20 +1036,24 @@ void WsmanProtocolListen()
             trace_ListeningOnEncryptedPort(s_optsPtr->httpsport[count]);
         }
     }
+
+    return r;
 }
 
-void BinaryProtocolListenFile(
+MI_Result BinaryProtocolListenFile(
     const char *socketFile, 
     MuxIn *mux, 
     ProtocolBase **protocol,
     const char *expectedSecretString)
 {
-    MI_Result r;
+    MI_Result r = MI_RESULT_OK;
 
     /* mux */
     {
         if(MuxIn_Init(mux, RequestCallback, &s_dataPtr->protocolData, NULL, PostResultMsg_NewAndSerialize) != MI_RESULT_OK)
+        {
             err(ZT("MuxIn_Init() failed"));
+        }
     }
         
     /* Create new protocol object */
@@ -1085,21 +1083,25 @@ void BinaryProtocolListenFile(
             (*protocol)->expectedSecretString = NULL;
         }
     }
+
+    return r;
 }
 
-void BinaryProtocolListenSock(
+MI_Result BinaryProtocolListenSock(
     Sock sock, 
     MuxIn *mux, 
     ProtocolSocketAndBase **protocol, 
     const char *socketFile, 
     const char *expectedSecretString)
 {
-    MI_Result r;
+    MI_Result r = MI_RESULT_OK;
 
     /* mux */
     {
         if(MuxIn_Init(mux, RequestCallback, &s_dataPtr->protocolData, NULL, PostResultMsg_NewAndSerialize) != MI_RESULT_OK)
+        {
             err(ZT("MuxIn_Init() failed"));
+        }
     }
         
     /* Create new protocol object */
@@ -1132,13 +1134,15 @@ void BinaryProtocolListenSock(
             (*protocol)->protocolSocket.engineAuthState = PRT_AUTH_OK;
         }
     }
+    
+    return r;
 }
 
-void RunProtocol()
+MI_Result RunProtocol()
 {
     /* Run the protocol object (waiting for new messages) */
 
-    MI_Result r;
+    MI_Result r = MI_RESULT_OK;
     const PAL_Uint64 ONE_SECOND_USEC = 1000 * 1000;
     PAL_Uint64 start;
     PAL_Uint64 finish;
@@ -1169,7 +1173,7 @@ void RunProtocol()
             }
         }
 
-        Selector_SetServerType(&s_dataPtr->selector, (MI_Uint32)serverType);
+        s_dataPtr->disp.agentmgr.serverType = (MI_Uint32)serverType;
 
         r = Selector_Run(&s_dataPtr->selector, ONE_SECOND_USEC, MI_FALSE);
 
@@ -1231,6 +1235,8 @@ void RunProtocol()
 
     /* Shutdown the network */
     Sock_Stop();
+
+    return MI_RESULT_OK;
 }
 
 void ServerCleanup(int pidfile)

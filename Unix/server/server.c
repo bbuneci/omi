@@ -54,17 +54,21 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
     int fd;
     int size;
     char socketString[S_SOCKET_LENGTH];
+    MI_Result r;
 
     Strlcpy(engineFile, OMI_GetPath(ID_BINDIR), PAL_MAX_PATH_SIZE);
     Strlcat(engineFile, "/omiengine", PAL_MAX_PATH_SIZE);
     argv[0] = engineFile;
 
-    BinaryProtocolListenFile(sockFile, &s_data.mux[0], &s_data.protocol0, secretString);
+    r = BinaryProtocolListenFile(sockFile, &s_data.mux[0], &s_data.protocol0, secretString);
+    if (r != MI_RESULT_OK)
+    {
+        return -1;
+    }
     
     if(socketpair(AF_UNIX, SOCK_STREAM, 0, s) != 0)
     {
         err(ZT("failed to create unix-domain socket pair"));
-        return -1;
     }
 
     if (MI_RESULT_OK != Sock_SetBlocking(s[0], MI_FALSE) ||
@@ -78,14 +82,17 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
     if (child < 0)
     {
         err(PAL_T("fork failed"));
-        return -1;  
     }
 
     if (child > 0)   // parent
     {
         trace_ServerClosingSocket(0, s[1]);
         Sock_Close(s[1]);
-        BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
+        r = BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
+        if (r != MI_RESULT_OK)
+        {
+            return -1;
+        }
 
         return 0;
     }
@@ -98,7 +105,6 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
     if (SetUser(s_opts.serviceAccountUID, s_opts.serviceAccountGID) != 0)
     {
         err(PAL_T("failed to change uid/gid of engine"));
-        return -1;
     }  
 
     /* Close all open file descriptors except provided socket
@@ -197,27 +203,23 @@ static int _CreateSockFile(char *sockFileBuf, int sockFileBufSize, char *secretS
         if (r != 0)
         {
             err(PAL_T("failed to create sockets directory: %T"), tcs(sockDir));
-            return -1;
         }
 
         r = chown(sockDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
         if (r != 0)
         {
             err(PAL_T("failed to chown sockets directory: %T"), tcs(sockDir));
-            return -1;
         }
     }
         
     if ( _GenerateRandomString(name, SOCKET_FILE_NAME_LENGTH) != 0)
     {
         err(PAL_T("Unable to generate socket file name"));
-        return -1;
     }
 
     if ( _GenerateRandomString(secretStringBuf, secretStringBufSize) != 0)
     {
         err(PAL_T("Unable to generate secretString"));
-        return -1;
     }
 
     Strlcpy(sockFileBuf, sockDir, sockFileBufSize);
@@ -261,6 +263,7 @@ int servermain(int argc, const char* argv[])
     char socketFile[PAL_MAX_PATH_SIZE];
     char secretString[S_SECRET_STRING_LENGTH];
     const char* arg0 = argv[0];
+    MI_Result result;    
 
     SetDefaults(&s_opts, &s_data, arg0, OMI_SERVER);
 
@@ -303,25 +306,37 @@ int servermain(int argc, const char* argv[])
     if (s_opts.stop || s_opts.reloadConfig)
     {
         if (PIDFile_IsRunning() != 0)
+        {
             info_exit(ZT("server is not running\n"));
+        }
 
         if (PIDFile_Signal(s_opts.stop ? SIGTERM : SIGHUP) != 0)
+        {
             err(ZT("failed to stop server\n"));
+        }
 
         if (s_opts.stop)
+        {
             Tprintf(ZT("%s: stopped server\n"), scs(arg0));
+        }
         else
+        {
             Tprintf(ZT("%s: refreshed server\n"), scs(arg0));
+        }
 
         exit(0);
     }
     if (s_opts.reloadDispatcher)
     {
         if (PIDFile_IsRunning() != 0)
+        {
             info_exit(ZT("server is not running\n"));
+        }
 
         if (PIDFile_Signal(SIGUSR1) != 0)
+        {
             err(ZT("failed to reload dispatcher on the server\n"));
+        }
 
         Tprintf(ZT("%s: server has reloaded its dispatcher\n"), scs(arg0));
 
@@ -332,7 +347,9 @@ int servermain(int argc, const char* argv[])
 #if defined(CONFIG_POSIX)
 
     if (PIDFile_IsRunning() == 0)
+    {
         err(ZT("server is already running\n"));
+    }
 
     /* Verify that server is started as root */
     if (0 != IsRoot() && !s_opts.ignoreAuthentication)
@@ -350,8 +367,9 @@ int servermain(int argc, const char* argv[])
     if (0 != SetSignalHandler(SIGTERM, HandleSIGTERM) ||
         0 != SetSignalHandler(SIGHUP, HandleSIGHUP) ||
         0 != SetSignalHandler(SIGUSR1, HandleSIGUSR1))
+    {
         err(ZT("cannot set sighandler, errno %d"), errno);
-
+    }
 
     /* Watch for SIGCHLD signals */
     SetSignalHandler(SIGCHLD, HandleSIGCHLD);
@@ -368,7 +386,9 @@ int servermain(int argc, const char* argv[])
 #if defined(CONFIG_POSIX)
     /* Daemonize */
     if (s_opts.daemonize && Process_Daemonize() != 0)
+    {
         err(ZT("failed to daemonize server process"));
+    }
 #endif
 
 #if defined(CONFIG_POSIX)
@@ -414,7 +434,6 @@ int servermain(int argc, const char* argv[])
         if (r != 0)
         {
             err(ZT("failed to create socket file"));
-            exit(1);
         }
 
         InitializeNetwork();
@@ -423,7 +442,6 @@ int servermain(int argc, const char* argv[])
         if (r != 0)
         {
             err(ZT("failed to start omi engine"));
-            exit(1);
         }
 
         free(engine_argv);
@@ -433,14 +451,30 @@ int servermain(int argc, const char* argv[])
     {
         if (s_opts.nonRoot != MI_TRUE)
         {
-            InitializeNetwork();
+            result = InitializeNetwork();
+            if (result != MI_RESULT_OK)
+            {
+                err(ZT("Failed to initialize network"));
+            }
 
-            WsmanProtocolListen();
+            result = WsmanProtocolListen();
+            if (result != MI_RESULT_OK)
+            {
+                err(ZT("Failed to initialize Wsman"));
+            }
 
-            BinaryProtocolListenFile(OMI_GetPath(ID_SOCKETFILE), &s_data.mux[0], &s_data.protocol0, NULL);
+            result = BinaryProtocolListenFile(OMI_GetPath(ID_SOCKETFILE), &s_data.mux[0], &s_data.protocol0, NULL);
+            if (result != MI_RESULT_OK)
+            {
+                err(ZT("Failed to initialize binary protocol for socket file"));
+            }
         }
 
-        RunProtocol();
+        result = RunProtocol();
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed protocol loop"));
+        }
     }
 
     ServerCleanup(pidfile);

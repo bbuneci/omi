@@ -123,9 +123,6 @@ void Selector_SetAllowEmptyFlag(
     Selector* self,
     MI_Boolean allowEmptySelector);
 
-void Selector_SetServerType(Selector *self, MI_Uint32 type);
-MI_Uint32 Selector_GetServerType(Selector *self);
-
 END_EXTERNC
 
 #endif /* _omi_selector_h */

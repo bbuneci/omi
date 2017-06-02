@@ -128,11 +128,11 @@ void HandleSIGCHLD(int sig);
 void RequestCallback(_Inout_ InteractionOpenParams* interactionParams);
 void FUNCTION_NEVER_RETURNS err(const ZChar* fmt, ...);
 void FUNCTION_NEVER_RETURNS info_exit(const ZChar* fmt, ...);
-void BinaryProtocolListenFile(const char *socketFile, MuxIn *mux, ProtocolBase **protocol, const char *expectedSecretString);
-void BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **protocol, const char *socketFile, const char *expectedSecretString);
-void WsmanProtocolListen();
-void RunProtocol();
-void InitializeNetwork();
+MI_Result BinaryProtocolListenFile(const char *socketFile, MuxIn *mux, ProtocolBase **protocol, const char *expectedSecretString);
+MI_Result BinaryProtocolListenSock(Sock sock, MuxIn *mux, ProtocolSocketAndBase **protocol, const char *socketFile, const char *expectedSecretString);
+MI_Result WsmanProtocolListen();
+MI_Result RunProtocol();
+MI_Result InitializeNetwork();
 void ServerCleanup(int pidfile);
 
 #endif /* _server_h */

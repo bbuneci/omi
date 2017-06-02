@@ -987,7 +987,7 @@ static AgentElem* _CreateAgent(
     s[0] = INVALID_SOCK;
     s[1] = INVALID_SOCK;
 
-    MI_Uint32 serverType = Selector_GetServerType(self->selector);
+    MI_Uint32 serverType = self->serverType;
 
     if (serverType == 0 /* server */)
     {
@@ -1240,8 +1240,6 @@ static MI_Result _SendIdleRequestToAgent(
     requestItem->finishOnErrorState = RequestItemFinishState_None;
     Strand_SetDelayFinish(&requestItem->strand.strand);
     Strand_Leave(&requestItem->strand.strand);
-
-    sleep(5);
 
     result = _SendRequestToAgent_Common( requestItem, &notification->base, NULL );
 

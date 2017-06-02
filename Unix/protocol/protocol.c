@@ -1150,7 +1150,7 @@ static MI_Boolean _ProcessCreateAgentMsg(
                 return MI_FALSE;
             }
 
-            /* Create/open fiel with permisisons 644 */
+            /* Create/open file with permisisons 644 */
             logfd = open(path, O_WRONLY|O_CREAT|O_APPEND, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
             if (logfd == INVALID_SOCK)
             {
@@ -2707,6 +2707,8 @@ MI_Result Protocol_New_Agent_Request(
     if( r != MI_RESULT_OK )
         return r;
 
+    socketAndBase->internalProtocolBase.skipInstanceUnpack = MI_TRUE;
+    
     if (!_SendCreateAgentMsg(&socketAndBase->protocolSocket, CreateAgentMsgRequest, uid, gid, 0))
     {
         Selector_RemoveHandler(agentMgr->selector, &socketAndBase->protocolSocket.base);

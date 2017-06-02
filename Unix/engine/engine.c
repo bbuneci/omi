@@ -15,6 +15,7 @@ static ServerData s_data;
 int enginemain(int argc, const char* argv[])
 {
     int pidfile = -1;
+    MI_Result result;
 
     SetDefaults(&s_opts, &s_data, argv[0], OMI_ENGINE);
 
@@ -42,8 +43,9 @@ int enginemain(int argc, const char* argv[])
     if (0 != SetSignalHandler(SIGTERM, HandleSIGTERM) ||
         0 != SetSignalHandler(SIGHUP, HandleSIGHUP) ||
         0 != SetSignalHandler(SIGUSR1, HandleSIGUSR1))
+    {
         err(ZT("cannot set sighandler, errno %d"), errno);
-
+    }
 
     /* Watch for SIGCHLD signals */
     SetSignalHandler(SIGCHLD, HandleSIGCHLD);
@@ -53,39 +55,62 @@ int enginemain(int argc, const char* argv[])
     /* Change directory to 'rundir' */
     if (Chdir(OMI_GetPath(ID_RUNDIR)) != 0)
     {
-        err(ZT("failed to change directory to: %s"), 
-            scs(OMI_GetPath(ID_RUNDIR)));
+        err(ZT("failed to change directory to: %s"), scs(OMI_GetPath(ID_RUNDIR)));
     }
 
 #if defined(CONFIG_POSIX)
     /* Daemonize */
     if (s_opts.daemonize && Process_Daemonize() != 0)
+    {
         err(ZT("failed to daemonize engine process"));
+    }
 #endif
 
     while (!s_data.terminated)
     {
         MI_Boolean r;
 
-        InitializeNetwork();
+        result = InitializeNetwork();
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed to initialize network"));
+        }
 
-        WsmanProtocolListen();
+        result = WsmanProtocolListen();
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed to initialize Wsman"));
+        }
 
         // binary connection with server
-        BinaryProtocolListenSock(s_opts.socketpairPort, &s_data.mux[1], &s_data.protocol1, NULL, NULL);
+        result = BinaryProtocolListenSock(s_opts.socketpairPort, &s_data.mux[1], &s_data.protocol1, NULL, NULL);
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed to initialize binary protocol for socket"));
+        }
 
         r = SendSocketFileRequest(&s_data.protocol1->protocolSocket);
         if (r == MI_FALSE)
+        {
             err(ZT("failed to send socket file request"));
+        }
 
         // Give it a little time for SocketFile info to come back from server
-        Sleep_Milliseconds(50);
+        // Sleep_Milliseconds(50);
         
         // binary connection with client
         const char *path = OMI_GetPath(ID_SOCKETFILE);
-        BinaryProtocolListenFile(path, &s_data.mux[0], &s_data.protocol0, NULL);
+        result = BinaryProtocolListenFile(path, &s_data.mux[0], &s_data.protocol0, NULL);
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed to initialize binary protocol for socket file"));
+        }
 
-        RunProtocol();
+        result = RunProtocol();
+        if (result != MI_RESULT_OK)
+        {
+            err(ZT("Failed protocol loop"));
+        }
     }
 
     ServerCleanup(pidfile);
