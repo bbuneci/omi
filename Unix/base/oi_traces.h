@@ -354,6 +354,8 @@ OI_EVENT("Invalid engine credentials")
 void trace_InvalidEngineCredentials();
 OI_EVENT("Engine credentials have not been received")
 void trace_EngineCredentialsNotReceived();
+OI_EVENT("Tracker hash map error");
+void trace_TrackerHashMapError();
 
 /******************************** WARNINGS ***********************************/
 

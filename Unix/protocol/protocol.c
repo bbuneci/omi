@@ -25,6 +25,7 @@
 #include <pal/file.h>
 #include <pal/sleep.h>
 #include <pal/hashmap.h>
+#include <pal/lock.h>
 
 //#define  ENABLE_TRACING 1
 #ifdef ENABLE_TRACING
@@ -57,6 +58,7 @@ static const MI_Uint32 _MAGIC = 0xC764445E;
 static char s_socketFile[PAL_MAX_PATH_SIZE];
 static char s_secretString[S_SECRET_STRING_LENGTH];
 static HashMap s_protocolSocketTracker;
+static Lock s_trackerLock;
 
 /*
 **==============================================================================
@@ -500,7 +502,16 @@ static MI_Result _ProtocolSocketTrackerAddElement(Sock s, ProtocolSocket *protoc
     b->key = (int)s;
     b->value = (void*)protocolSocket;
 
+    Lock_Acquire(&s_trackerLock);
     r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
+    if (r != 0)
+    {
+        // already exists
+        return MI_RESULT_FAILED;
+    }
+
+    Lock_Release(&s_trackerLock);
+
     trace_TrackerHashMapAdd(protocolSocket, s);
 
     return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
@@ -513,7 +524,10 @@ static MI_Result _ProtocolSocketTrackerRemoveElement(Sock s)
 
     b.key = (int)s;
 
+    Lock_Acquire(&s_trackerLock);
     r = HashMap_Remove(&s_protocolSocketTracker, (HashBucket*)&b);
+    Lock_Release(&s_trackerLock);
+
     trace_TrackerHashMapRemove(s);
 
     return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
@@ -526,7 +540,9 @@ static void* _ProtocolSocketTrackerGetElement(Sock s)
 
     b.key = (int)s;
 
+    Lock_Acquire(&s_trackerLock);
     r = (TrackerBucket*) HashMap_Find(&s_protocolSocketTracker, (HashBucket*)&b);
+    Lock_Release(&s_trackerLock);
 
     if (r == NULL)
         return NULL;
@@ -1015,12 +1031,15 @@ static MI_Boolean _ProcessEngineAuthMessage(
     /* engine waiting for server's response */
     if (PostSocketFileResponse == sockMsg->type)
     {
-        DEBUG_ASSERT(sockMsg->sockFilePath && sockMsg->secretString);
+        DEBUG_ASSERT(sockMsg->sockFilePath);
+        DEBUG_ASSERT(sockMsg->secretString);
             
         Strlcpy(s_socketFile, sockMsg->sockFilePath, PAL_MAX_PATH_SIZE);
         Strlcpy(s_secretString, sockMsg->secretString, S_SECRET_STRING_LENGTH);
         trace_ServerInfoReceived();
 
+        /* Initialize socket tracker and lock */
+        Lock_Init(&s_trackerLock);
         return HashMap_Init(&s_protocolSocketTracker, 1, _ProtocolSocketTrackerTestHash, _ProtocolSocketTrackerTestEqual, 
                             _ProtocolSocketTrackerTestRelease);
     }
@@ -1540,7 +1559,12 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                         Sock s = binMsg->forwardSock;
                         Sock forwardSock = handler->base.sock;
-                        _ProtocolSocketTrackerAddElement(forwardSock, handler);
+                        r = _ProtocolSocketTrackerAddElement(forwardSock, handler);
+                        if(MI_RESULT_OK != r)
+                        {
+                            trace_TrackerHashMapError();
+                            return PRT_RETURN_FALSE;
+                        }
 
                         DEBUG_ASSERT(strlen(s_socketFile) > 0 && strlen(s_secretString) > 0);
                         DEBUG_ASSERT(s == INVALID_SOCK);
@@ -1557,7 +1581,12 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                             handler = &newSocketAndBase->protocolSocket;
                             newSocketAndBase->internalProtocolBase.forwardRequests = MI_TRUE;
-                            _ProtocolSocketTrackerAddElement(s, handler);
+                            r = _ProtocolSocketTrackerAddElement(s, handler);
+                            if(MI_RESULT_OK != r)
+                            {
+                                trace_TrackerHashMapError();
+                                return PRT_RETURN_FALSE;
+                            }
                         }
 
                         handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
@@ -1576,6 +1605,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         ProtocolSocket *newHandler = _ProtocolSocketTrackerGetElement(s);
                         if (newHandler == NULL)
                         {
+                            trace_TrackerHashMapError();
                             return PRT_RETURN_FALSE;
                         }
 
@@ -1586,14 +1616,40 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                             // close socket to server
                             trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
-                            _ProtocolSocketTrackerRemoveElement(handler->base.sock);
+
+                            r= _ProtocolSocketTrackerRemoveElement(handler->base.sock);
+                            if(MI_RESULT_OK != r)
+                            {
+                                trace_TrackerHashMapError();
+                                return PRT_RETURN_FALSE;
+                            }
+
+                            r= _ProtocolSocketTrackerRemoveElement(s);
+                            if(MI_RESULT_OK != r)
+                            {
+                                trace_TrackerHashMapError();
+                                return PRT_RETURN_FALSE;
+                            }
                         }
                         else if (binMsg->result == MI_RESULT_ACCESS_DENIED)
                         {
                             // close socket to server
                             trace_EngineClosingSocket(handler, handler->base.sock);
                             Sock_Close(handler->base.sock);
+
                             _ProtocolSocketTrackerRemoveElement(handler->base.sock);
+                            if(MI_RESULT_OK != r)
+                            {
+                                trace_TrackerHashMapError();
+                                return PRT_RETURN_FALSE;
+                            }
+
+                            _ProtocolSocketTrackerRemoveElement(s);
+                            if(MI_RESULT_OK != r)
+                            {
+                                trace_TrackerHashMapError();
+                                return PRT_RETURN_FALSE;
+                            }
                         }
                         else
                         {

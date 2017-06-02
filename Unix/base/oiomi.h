@@ -885,6 +885,12 @@ FILE_EVENT0(20137, trace_EngineCredentialsNotReceived_Impl, LOG_ERR, PAL_T("Inva
 #else
 #define trace_EngineCredentialsNotReceived() trace_EngineCredentialsNotReceived_Impl(0, 0)
 #endif
+FILE_EVENT0(20138, trace_TrackerHashMapError_Impl, LOG_ERR, PAL_T("Tracker hash map error"))
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_TrackerHashMapError() trace_TrackerHashMapError_Impl(__FILE__, __LINE__)
+#else
+#define trace_TrackerHashMapError() trace_TrackerHashMapError_Impl(0, 0)
+#endif
 FILE_EVENT3(30000, trace__FindSubRequest_CannotFindKey_Impl, LOG_WARNING, PAL_T("__FindSubRequest: SubscribeElem %p(%p), Cannot find key: %x"), void *, Strand *, MI_Uint64)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_AgentElem_FindRequest_CannotFindKey(a0, a1, a2) trace_AgentElem_FindRequest_CannotFindKey_Impl(__FILE__, __LINE__, a0, a1, a2)

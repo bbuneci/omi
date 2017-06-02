@@ -1242,6 +1242,7 @@ static MI_Result _SendIdleRequestToAgent(
     Strand_Leave(&requestItem->strand.strand);
 
     sleep(5);
+
     result = _SendRequestToAgent_Common( requestItem, &notification->base, NULL );
 
     BinProtocolNotification_Release(notification);
