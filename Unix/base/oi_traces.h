@@ -349,6 +349,12 @@ OI_EVENT("Selector_AddHandler: selector=%p, handler=%p, name=%T ALREADY REGISTER
 void trace_Selector_AddHandler_AlreadyThere(Selector * selector, Handler * handler, const TChar * name);
 OI_EVENT("Selector_RemoveHandler: selector=%p, handler=%p, name=%T NOT REGISTERED")
 void trace_Selector_RemoveHandler_NotThere(Selector * selector, Handler * handler, const TChar * name);
+
+OI_EVENT("Invalid engine credentials")
+void trace_InvalidEngineCredentials();
+OI_EVENT("Engine credentials have not been received")
+void trace_EngineCredentialsNotReceived();
+
 /******************************** WARNINGS ***********************************/
 
 OI_SETDEFAULT(PRIORITY(LOG_WARNING))

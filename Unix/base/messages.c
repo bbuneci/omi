@@ -219,6 +219,11 @@ static const MessageField postSocketFileFields[] =
     {MFT_END_OF_LIST, 0, 0, 0}
 };
 
+static const MessageField socketMaintenanceFields[] =
+{
+    {MFT_POINTER_OPT,offsetof(SocketMaintenance, message),0,0},
+    {MFT_END_OF_LIST, 0, 0, 0}
+};
 /* Entries in this array corresponds to MessageTag values */
 typedef struct _MessageDeclaration
 {
@@ -267,6 +272,7 @@ static const MessageDeclaration allMessages[] = {
     {pullMessageFields,                 sizeof(PullReq),                MI_TRUE},
     {createAgentReqFields,              sizeof(CreateAgentReq),         MI_TRUE},
     {postSocketFileFields,              sizeof(PostSocketFile),         MI_TRUE},
+    {socketMaintenanceFields,           sizeof(SocketMaintenance),      MI_TRUE},
 };
 
 /*
@@ -807,6 +813,7 @@ const PAL_Char* _MsgNames[] = {
     PAL_T("PullReq"),
     PAL_T("CreateAgentReq"),
     PAL_T("PostSocketFile"),
+    PAL_T("SocketMaintenance"),
 };
 
 const PAL_Char* MessageName(MI_Uint32 tag)

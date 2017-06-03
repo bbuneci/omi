@@ -873,6 +873,18 @@ FILE_EVENT3(20137, trace_Selector_RemoveHandler_NotThere_Impl, LOG_ERR, PAL_T("S
 #else
 #define trace__FindSubRequest_CannotFindKey(a0, a1, a2) trace__FindSubRequest_CannotFindKey_Impl(0, 0, a0, a1, a2)
 #endif
+FILE_EVENT0(20136, trace_InvalidEngineCredentials_Impl, LOG_ERR, PAL_T("Invalid engine credentials received"))
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_InvalidEngineCredentials() trace_InvalidEngineCredentials_Impl(__FILE__, __LINE__)
+#else
+#define trace_InvalidEngineCredentials() trace_InvalidEngineCredentials_Impl(0, 0)
+#endif
+FILE_EVENT0(20137, trace_EngineCredentialsNotReceived_Impl, LOG_ERR, PAL_T("Invalid engine credentials received"))
+#if defined(CONFIG_ENABLE_DEBUG)
+#define trace_EngineCredentialsNotReceived() trace_EngineCredentialsNotReceived_Impl(__FILE__, __LINE__)
+#else
+#define trace_EngineCredentialsNotReceived() trace_EngineCredentialsNotReceived_Impl(0, 0)
+#endif
 FILE_EVENT3(30000, trace__FindSubRequest_CannotFindKey_Impl, LOG_WARNING, PAL_T("__FindSubRequest: SubscribeElem %p(%p), Cannot find key: %x"), void *, Strand *, MI_Uint64)
 #if defined(CONFIG_ENABLE_DEBUG)
 #define trace_AgentElem_FindRequest_CannotFindKey(a0, a1, a2) trace_AgentElem_FindRequest_CannotFindKey_Impl(__FILE__, __LINE__, a0, a1, a2)

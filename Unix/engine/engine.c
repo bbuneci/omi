@@ -86,7 +86,7 @@ int enginemain(int argc, const char* argv[])
         
         // binary connection with client
         const char *path = OMI_GetPath(ID_SOCKETFILE);
-        BinaryProtocolListenFile(path, &s_data.mux[0], &s_data.protocol0);
+        BinaryProtocolListenFile(path, &s_data.mux[0], &s_data.protocol0, NULL);
 
         RunProtocol();
     }

@@ -474,7 +474,7 @@ static MI_Boolean _SendAuthRequest(
     if (!req)
         return MI_FALSE;
 
-    req->clientSock = returnSock;
+    req->forwardSock = returnSock;
 
     if (user && *user)
     {
@@ -534,7 +534,7 @@ static MI_Boolean _SendAuthResponse(
     if (!req)
         return MI_FALSE;
 
-    req->clientSock = returnSock;
+    req->forwardSock = returnSock;
 
     req->result = result;
     if (path && *path)
@@ -588,7 +588,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
 
     if (0 == memcmp(binMsg->authData, handler->authData->authRandom, AUTH_RANDOM_DATA_SIZE))
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->clientSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
             return MI_FALSE;
 
         /* Auth ok */
@@ -608,7 +608,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
     trace_AuthFailed_RandomDataMismatch();
 
     /* Auth failed */
-    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->clientSock);
+    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
     handler->authState = PRT_AUTH_FAILED;
     return MI_FALSE;
 }
@@ -642,7 +642,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (0 == AuthenticateUser(binMsg->user, binMsg->password) &&
             0 == LookupUser(binMsg->user, &handler->authInfo.uid, &handler->authInfo.gid))
         {
-            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->clientSock))
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
                 return MI_FALSE;
 
             /* Auth ok */
@@ -654,7 +654,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         trace_AuthFailed_ForUser(scs(binMsg->user));
 
         /* Auth failed */
-        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->clientSock);
+        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
         handler->authState = PRT_AUTH_FAILED;
         return MI_FALSE;
     }
@@ -663,7 +663,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         implicit auth */
     if (0 == GetUIDByConnection((int)handler->base.sock, &handler->authInfo.uid, &handler->authInfo.gid))
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->clientSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
             return MI_FALSE;
 
         /* Auth ok */
@@ -672,7 +672,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
     }
 #if defined(CONFIG_OS_WINDOWS)
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->clientSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
             return MI_FALSE;
 
         /* Ignore Auth by setting it to OK */
@@ -691,7 +691,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (!handler->authData)
         {
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->clientSock);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
             handler->authState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
@@ -701,13 +701,13 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
             trace_CannotCreateFileForUser((int)binMsg->uid);
 
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->clientSock);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
             handler->authState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
 
         /* send file name to the client */
-        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->clientSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->forwardSock))
             return MI_FALSE;
 
         /* Auth posponed */
@@ -799,7 +799,7 @@ static MI_Boolean _ProcessAuthMessage(
             }
 
             File_Close(is);
-            return _SendAuthRequest(handler, 0, 0, buf, -1);
+            return _SendAuthRequest(handler, 0, 0, buf, binMsg->forwardSock);
         }
         else
         {
@@ -845,8 +845,6 @@ MI_Boolean SendSocketFileRequest(
         _PrepareMessageForSending(h);
         retVal = _RequestCallbackWrite(h);
     }
-
-    // h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
 
     PostSocketFile_Release(req);
 
@@ -896,8 +894,6 @@ MI_Boolean SendSocketFileResponse(
         retVal = _RequestCallbackWrite(h);
     }
 
-    // h->engineAuthState = PRT_AUTH_OK;
-
     PostSocketFile_Release(req);
 
     return retVal;
@@ -924,7 +920,7 @@ static MI_Boolean _ProcessEngineAuthMessage(
         return MI_TRUE;
     }
 
-    /* engine waiting for server's response? */
+    /* engine waiting for server's response */
     if (PostSocketFileResponse == sockMsg->type)
     {
         DEBUG_ASSERT(sockMsg->sockFilePath && sockMsg->secretString);
@@ -932,6 +928,88 @@ static MI_Boolean _ProcessEngineAuthMessage(
         Strlcpy(s_socketFile, sockMsg->sockFilePath, PAL_MAX_PATH_SIZE);
         Strlcpy(s_secretString, sockMsg->secretString, S_SECRET_STRING_LENGTH);
         
+        return MI_TRUE;
+    }
+
+    return MI_FALSE;
+}
+
+/* Creates and sends socket maintenance message */
+static MI_Boolean _SendSocketMaintenanceMsg(
+    ProtocolSocket* h,
+    SocketMaintenanceType type,
+    const char* message,
+    Sock s)
+{
+    SocketMaintenance* req;
+    MI_Boolean retVal = MI_TRUE;
+
+    req = SocketMaintenance_New(type);
+
+    if (!req)
+        return MI_FALSE;
+
+    req->sock = s;
+
+    if (message && *message)
+    {
+        req->message = Batch_Strdup(req->base.batch, message);
+        if (!req->message)
+        {
+            SocketMaintenance_Release(req);
+            return MI_FALSE;
+        }
+    }
+
+    /* send message */
+    {
+        DEBUG_ASSERT(h->message == NULL);
+        h->message = (Message*) req;
+
+        Message_AddRef(&req->base);
+
+        _PrepareMessageForSending(h);
+        retVal = _RequestCallbackWrite(h);
+    }
+
+    SocketMaintenance_Release(req);
+
+    return retVal;
+}
+
+static MI_Boolean _ProcessSocketMaintenanceMessage(
+    ProtocolSocket* handler,
+    Message *msg)
+{
+    ProtocolBase* protocolBase = (ProtocolBase*)handler->base.data;
+    SocketMaintenance* sockMsg;
+
+    if (msg->tag != SocketMaintenanceTag)
+        return MI_FALSE;
+
+    sockMsg = (SocketMaintenance*) msg;
+
+    /* server waiting engine's request */
+    if (SocketMaintenanceStartup == sockMsg->type)
+    {
+        DEBUG_ASSERT(handler->engineAuthState == PRT_AUTH_WAIT_CONNECTION_REQUEST);
+        if (Strncmp(sockMsg->message, protocolBase->expectedSecretString, S_SECRET_STRING_LENGTH) == 0)
+        {
+            handler->engineAuthState = PRT_AUTH_OK;
+        }
+        else
+        {
+            trace_InvalidEngineCredentials();
+            if(_SendSocketMaintenanceMsg(handler, SocketMaintenanceShutdown, "Invalid secret string received", sockMsg->sock) == 
+               MI_FALSE)
+                return MI_FALSE;
+        }
+        return MI_TRUE;
+    }
+
+    /* engine waiting for closing request */
+    if (SocketMaintenanceShutdown == sockMsg->type)
+    {
         return MI_TRUE;
     }
 
@@ -1086,6 +1164,25 @@ static MI_Boolean _RequestCallbackWrite(
     }
 }
 
+static MI_Result _CreateConnector(
+    Sock* s,
+    const char* locator)
+{
+    const char* posColon;
+
+    /* This function expects a locator in the form "_host_:_port_", for HTTP */
+    /* connections, or in the form of a file name, for local connections */
+    /* using a socket. In the latter case, the file name is the nsme of the */
+    /* socket special file. Thus, socket special files used with this code */
+    /* may not contain a colon in their names. Servers with IPv6 addresses */
+    /* must use symbolic names, because IPv6 addresses use a colon as a separator */
+
+    posColon = strchr(locator, ':');
+    if (!posColon)
+        return Sock_CreateLocalConnector(s, locator);
+    return Sock_CreateIPConnector(s, locator);
+}
+
 /*
     Processes incoming message, including:
         - decoding message from batch
@@ -1139,8 +1236,23 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
             if( _ProcessEngineAuthMessage(handler, msg) )
                 ret = PRT_CONTINUE;
         }
-
-        if (PRT_AUTH_OK != handler->authState)
+        else if (msg->tag == SocketMaintenanceTag)
+        {
+            if( _ProcessSocketMaintenanceMessage(handler, msg) )
+                ret = PRT_CONTINUE;
+        }
+        else if (PRT_AUTH_OK != handler->engineAuthState)
+        {
+            trace_EngineCredentialsNotReceived();
+            if (msg->tag == BinProtocolNotificationTag)
+            {
+                BinProtocolNotification* binMsg = (BinProtocolNotification*) msg;
+                
+                _SendSocketMaintenanceMsg(handler, SocketMaintenanceShutdown, "Engine credentials not received", binMsg->forwardSock);
+                return PRT_RETURN_FALSE;
+            }
+        }
+        else if (PRT_AUTH_OK != handler->authState)
         {
             if (msg->tag == BinProtocolNotificationTag)
             {
@@ -1150,14 +1262,34 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                     if (binMsg->type == BinNotificationConnectRequest)
                     {
                         // forward to server
-                        Sock s = protocolBase->forwardingPort[MessageTagIndex(msg->tag)];
-                        Sock clientSock = handler->base.sock;
+
+                        Sock s = binMsg->forwardSock;
+                        Sock forwardSock = handler->base.sock;
+
+                        DEBUG_ASSERT( strlen(s_socketFile) > 0 && strlen(s_secretString) > 0);
+
+                        if (s == INVALID_SOCK)
+                        /* Create connector socket */
+                        {
+                            // Connect to server.
+                            r = _CreateConnector(&s, s_socketFile);
+                            if (r != MI_RESULT_OK && r != MI_RESULT_WOULD_BLOCK)
+                            {
+                                trace_SocketConnectorFailed(s_socketFile);
+                                return PRT_RETURN_FALSE;
+                            }
+                        }
 
                         handler->base.sock = s;
                         handler->authState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
                         handler->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
 
-                        if( s > 0 && _SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, clientSock) )                
+                        if (!_SendSocketMaintenanceMsg(handler, SocketMaintenanceStartup, s_secretString, forwardSock))
+                        {
+                            return PRT_RETURN_FALSE;
+                        }
+
+                        if (_SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, forwardSock) )                
                         {
                             ret = PRT_CONTINUE;
                         }
@@ -1165,16 +1297,19 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                     else if (binMsg->type == BinNotificationConnectResponse)
                     {
                         // forward to client
-                        Sock s = binMsg->clientSock;
-                    
-                        handler->base.sock = s;
+
+                        Sock s = binMsg->forwardSock;
+                        Sock forwardSock = handler->base.sock;
+
                         if (binMsg->result == MI_RESULT_OK)
                         {
                             handler->authState = PRT_AUTH_OK;
                         }
+
+                        handler->base.sock = s;
                         handler->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
 
-                        if( s > 0 && _SendAuthResponse(handler, binMsg->result, binMsg->authFile, -1) )                
+                        if( s > 0 && _SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock) )
                         {
                             ret = PRT_CONTINUE;
                         }
@@ -1618,25 +1753,6 @@ static MI_Result _CreateListener(
     }
 }
 
-static MI_Result _CreateConnector(
-    Sock* s,
-    const char* locator)
-{
-    const char* posColon;
-
-    /* This function expects a locator in the form "_host_:_port_", for HTTP */
-    /* connections, or in the form of a file name, for local connections */
-    /* using a socket. In the latter case, the file name is the nsme of the */
-    /* socket special file. Thus, socket special files used with this code */
-    /* may not contain a colon in their names. Servers with IPv6 addresses */
-    /* must use symbolic names, because IPv6 addresses use a colon as a separator */
-
-    posColon = strchr(locator, ':');
-    if (!posColon)
-        return Sock_CreateLocalConnector(s, locator);
-    return Sock_CreateIPConnector(s, locator);
-}
-
 static MI_Result _ProtocolBase_Init(
     _In_        ProtocolBase*   self,
     _In_opt_    Selector*       selector, /*optional, maybe NULL*/
@@ -1819,7 +1935,7 @@ ProtocolSocket* _ProtocolSocket_Server_New(
 
         /* waiting for connect-request */
         self->authState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
-        //    self->engineAuthState = PRT_AUTH_OK;
+        self->engineAuthState = (protocolBase->expectedSecretString == NULL) ? PRT_AUTH_OK : PRT_AUTH_WAIT_CONNECTION_REQUEST;
     }
 
     return self;
@@ -1909,10 +2025,10 @@ MI_Result ProtocolSocketAndBase_New_Connector(
         h->base.mask = SELECTOR_READ | SELECTOR_WRITE | SELECTOR_EXCEPTION;
         h->base.handlerName = MI_T("BINARY_CONNECTOR");
         h->authState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
-//        h->engineAuthState = PRT_AUTH_OK;
+        h->engineAuthState = PRT_AUTH_OK;
 
         /* send connect request */
-        if( !_SendAuthRequest(h, user, password, NULL, -1) )
+        if( !_SendAuthRequest(h, user, password, NULL, INVALID_SOCK) )
         {
             // this will call _RequestCallback which will schedule a CloseOther,
             // but that is not going delete the object (since it is not even truly opened),
@@ -1997,7 +2113,7 @@ MI_Result _ProtocolSocketAndBase_New_From_Socket(
             (only used in server/agent communication) */
         h->authState = PRT_AUTH_OK;
 
-//        h->engineAuthState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
+        h->engineAuthState = PRT_AUTH_OK;
 
         r = _AddProtocolSocket_Handler(self->internalProtocolBase.selector, h);
 

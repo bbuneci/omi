@@ -937,14 +937,6 @@ void FUNCTION_NEVER_RETURNS info_exit(const ZChar* fmt, ...)
     exit(0);
 }
 
-void _AddForwardingPort(ProtocolBase *protocol, MessageTag msgTag, Sock s)
-{
-    uint index = MessageTagIndex(msgTag);
-    if (index > MAX_FORWARDING_PORTS - 1)
-        err(ZT("unable to add forwarding port: %d"), index);
-    protocol->forwardingPort[index] = s;
-}
-
 void InitializeNetwork()
 {
     MI_Result r;
@@ -1054,10 +1046,10 @@ void WsmanProtocolListen()
 void BinaryProtocolListenFile(
     const char *socketFile, 
     MuxIn *mux, 
-    ProtocolBase **protocol)
+    ProtocolBase **protocol,
+    const char *expectedSecretString)
 {
     MI_Result r;
-    int i;
 
     /* mux */
     {
@@ -1079,20 +1071,18 @@ void BinaryProtocolListenFile(
             err(ZT("Protocol_New_Listener() failed: %T"), socketFile);
         }
 
-        if (serverType == OMI_ENGINE)
+        (*protocol)->forwardRequests = (serverType == OMI_ENGINE) ? MI_TRUE : MI_FALSE;
+
+        if (serverType == OMI_SERVER && s_optsPtr->nonRoot)
         {
-            (*protocol)->forwardRequests = MI_TRUE;
-            for (i=0; i<MAX_FORWARDING_PORTS; ++i)
-                (*protocol)->forwardingPort[i] = -1;
-            _AddForwardingPort(*protocol, BinProtocolNotificationTag, s_optsPtr->socketpairPort);
+            (*protocol)->socketFile = NULL;
+            (*protocol)->expectedSecretString = expectedSecretString;
         }
         else
         {
-            (*protocol)->forwardRequests = MI_FALSE;
+            (*protocol)->socketFile = NULL;
+            (*protocol)->expectedSecretString = NULL;
         }
-
-        (*protocol)->socketFile = NULL;
-        (*protocol)->expectedSecretString = NULL;
     }
 }
 
@@ -1126,17 +1116,20 @@ void BinaryProtocolListenSock(
         }
 
         (*protocol)->protocolSocket.authState = PRT_AUTH_WAIT_CONNECTION_REQUEST;
-        if (serverType == OMI_ENGINE)
+        (*protocol)->internalProtocolBase.forwardRequests = (serverType == OMI_ENGINE) ? MI_TRUE : MI_FALSE;
+
+        if (serverType == OMI_SERVER && s_optsPtr->nonRoot)
         {
-            (*protocol)->internalProtocolBase.forwardRequests = MI_TRUE;
+            (*protocol)->internalProtocolBase.socketFile = socketFile;
+            (*protocol)->internalProtocolBase.expectedSecretString = expectedSecretString;
+            (*protocol)->protocolSocket.engineAuthState = PRT_AUTH_OK;
         }
         else
         {
-            (*protocol)->internalProtocolBase.forwardRequests = MI_FALSE;
+            (*protocol)->internalProtocolBase.socketFile = socketFile;
+            (*protocol)->internalProtocolBase.expectedSecretString = expectedSecretString;
+            (*protocol)->protocolSocket.engineAuthState = PRT_AUTH_OK;
         }
-
-        (*protocol)->internalProtocolBase.socketFile = socketFile;
-        (*protocol)->internalProtocolBase.expectedSecretString = expectedSecretString;
     }
 }
 

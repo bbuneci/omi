@@ -34,7 +34,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
     Strlcat(engineFile, "/omiengine", PAL_MAX_PATH_SIZE);
     argv[0] = engineFile;
 
-    BinaryProtocolListenFile(sockFile, &s_data.mux[0], &s_data.protocol0);
+    BinaryProtocolListenFile(sockFile, &s_data.mux[0], &s_data.protocol0, secretString);
     
     if(socketpair(AF_UNIX, SOCK_STREAM, 0, s) != 0)
     {
@@ -411,7 +411,7 @@ int servermain(int argc, const char* argv[])
 
             WsmanProtocolListen();
 
-            BinaryProtocolListenFile(OMI_GetPath(ID_SOCKETFILE), &s_data.mux[0], &s_data.protocol0);
+            BinaryProtocolListenFile(OMI_GetPath(ID_SOCKETFILE), &s_data.mux[0], &s_data.protocol0, NULL);
         }
 
         RunProtocol();

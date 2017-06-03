@@ -329,6 +329,13 @@ void MessagePrint(const Message* msg, FILE* os)
             }
             break;
 
+        case SocketMaintenanceTag:
+            {
+                const SocketMaintenance* m = (const SocketMaintenance*)msg;
+                SocketMaintenance_Print(m, os);
+            }
+            break;
+
         default:
             Ftprintf(os, ZT("unknown message tag %d\n"), msg->tag);
             break;
@@ -673,6 +680,23 @@ void PostSocketFile_Print(
         {NULL, 0, 0},
     };
     _Message_Print(msg, os, "PostSocketFile", fields);
+}
+
+void SocketMaintenance_Print(
+    const SocketMaintenance* msg,
+    FILE* os)
+{
+    typedef SocketMaintenance Self;
+    static const Field fields[] =
+    {
+        {"tag", FT_UINT32, offsetof(Self, base.tag)},
+        {"operationId", FT_UINT64, offsetof(Self, base.operationId)},
+        {"type", FT_UINT32, offsetof(Self, type)},
+        {"sock", FT_SINT32, offsetof(Self, sock)},
+        {"message", FT_STRING, offsetof(Self, message)},
+        {NULL, 0, 0},
+    };
+    _Message_Print(msg, os, "SocketMaintenance", fields);
 }
 
 

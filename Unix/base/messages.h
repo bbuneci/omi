@@ -76,7 +76,8 @@ typedef enum _MessageTag
 #endif
     PullRequestTag = 33 | MessageTagIsRequest,
     CreateAgentReqTag = 34,
-    PostSocketFileTag = 35
+    PostSocketFileTag = 35,
+    SocketMaintenanceTag = 36
 }
 MessageTag;
 
@@ -1181,8 +1182,8 @@ typedef struct _BinProtocolNotification
     /* file name - client has to read it and send back content */
     const char*     authFile;
 
-    /* if in nonroot mode, keeps track of which socket to send message back to client*/
-    int             clientSock;
+    /* if in nonroot mode, keeps track of which socket to send message back*/
+    int             forwardSock;
 }
 BinProtocolNotification;
 
@@ -1229,6 +1230,9 @@ MI_Boolean Message_IsInternalMessage( _In_ Message* msg )
     }
 
     if (PostSocketFileTag == msg->tag)
+        return MI_TRUE;
+
+    if (SocketMaintenanceTag == msg->tag)
         return MI_TRUE;
 
     return MI_FALSE;
@@ -1647,6 +1651,61 @@ MI_INLINE void __PostSocketFile_Release(
 }
 
 void PostSocketFile_Print(const PostSocketFile* msg, FILE* os);
+
+/*
+**==============================================================================
+**
+** SocketMaintenance
+**
+**     Socket-related maintenance
+**
+**==============================================================================
+*/
+
+typedef enum _SocketMaintenanceType
+{
+    SocketMaintenanceStartup = 0,
+    SocketMaintenanceShutdown = 1
+}
+SocketMaintenanceType;
+
+typedef struct _SocketMaintenance
+{
+    Message         base;
+    MI_Uint32       type;
+    int             sock;
+    MI_ConstString  message;
+}
+SocketMaintenance;
+
+#define SocketMaintenance_New(type) \
+    __SocketMaintenance_New(type, CALLSITE)
+
+MI_INLINE SocketMaintenance* __SocketMaintenance_New(
+    SocketMaintenanceType type,
+    CallSite cs)
+{
+    SocketMaintenance* res = (SocketMaintenance*)__Message_New(
+        SocketMaintenanceTag, sizeof(SocketMaintenance), 0, 0,
+        cs);
+
+    if (res)
+        res->type = type;
+
+    return res;
+}
+
+#define SocketMaintenance_Release(self) \
+    __SocketMaintenance_Release(self, CALLSITE)
+
+MI_INLINE void __SocketMaintenance_Release(
+    SocketMaintenance* self,
+    CallSite cs)
+{
+    __Message_Release(&self->base, cs);
+}
+
+void SocketMaintenance_Print(const SocketMaintenance* msg, FILE* os);
 
 /*
 **==============================================================================

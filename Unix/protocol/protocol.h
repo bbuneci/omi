@@ -59,7 +59,6 @@ typedef struct _Protocol_AuthData
 }
 Protocol_AuthData;
 
-#define MAX_FORWARDING_PORTS 128
 typedef struct _ProtocolBase
 {
     MI_Uint32           magic;                  //TODO: Evaluate if this is still needed after implementing multiplexer
@@ -73,7 +72,6 @@ typedef struct _ProtocolBase
     /* Indicates whether instance has to be upacked or stored as byte array */
     MI_Boolean          skipInstanceUnpack;
     MI_Boolean          forwardRequests;       // true if in nonroot mode and msg should be forwarded
-    Sock                forwardingPort[MAX_FORWARDING_PORTS];   // indexed by messageTag
     const char*         expectedSecretString;          
     const char*         socketFile;          
 }
