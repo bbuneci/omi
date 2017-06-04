@@ -249,7 +249,7 @@ int StartServerAndConnect(
         argv[11] = "300";
 
         argv[12] = "--loglevel";
-        argv[13] = Log_GetLevelString(Log_GetLevel());
+        argv[13] = "DEBUG"; //Log_GetLevelString(Log_GetLevel());
         argv[14] = "--stopnoop";
         argv[15] = NULL;
 

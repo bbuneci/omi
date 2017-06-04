@@ -1683,7 +1683,6 @@ void trace_TrackerHashMapRemove(int socket);
 OI_EVENT("Tracker hash map found (%p, %d)")
 void trace_TrackerHashMapFind(void *handle, int socket);
 
-
 /****************************** VERBOSE events ******************************/
 
 OI_SETDEFAULT(PRIORITY(LOG_VERBOSE))

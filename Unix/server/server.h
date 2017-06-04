@@ -74,6 +74,8 @@ struct _ServerData
     /* pointers to self with different types - one per supported transport */
     ServerCallbackData  protocolData;
     ServerCallbackData  wsmanData;
+    
+    pid_t enginePid;
 };
 
 typedef struct _Options

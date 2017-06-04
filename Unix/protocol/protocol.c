@@ -967,12 +967,14 @@ MI_Boolean SendSocketFileResponse(
     PostSocketFile* req;
     MI_Boolean retVal = MI_TRUE;
 
+    DEBUG_ASSERT(socketFile);
+    DEBUG_ASSERT(expectedSecretString);
+
     req = PostSocketFile_New(PostSocketFileResponse);
 
     if (!req)
         return MI_FALSE;
 
-    if (socketFile && *socketFile)
     {
         req->sockFilePath = Batch_Strdup(req->base.batch, socketFile);
         if (!req->sockFilePath)
@@ -982,7 +984,6 @@ MI_Boolean SendSocketFileResponse(
         }
     }
 
-    if (expectedSecretString && *expectedSecretString)
     {
         req->secretString = Batch_Strdup(req->base.batch, expectedSecretString);
         if (!req->secretString)

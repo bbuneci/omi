@@ -86,6 +86,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
 
     if (child > 0)   // parent
     {
+        s_data.enginePid = child;
         trace_ServerClosingSocket(0, s[1]);
         Sock_Close(s[1]);
         r = BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
@@ -269,17 +270,18 @@ int servermain(int argc, const char* argv[])
 
     // Determine if we're running with non-root option
     _GetCommandLineNonRootOption(&argc, argv);
-    if (s_opts.nonRoot == MI_TRUE)
-    {
-        engine_argc = argc + 2;
-        engine_argv = _DuplicateArgv(argc, argv);
-    }
 
     /* Get --destdir command-line option */
     GetCommandLineDestDirOption(&argc, argv);
 
     /* Extract configuration file options */
     GetConfigFileOptions();
+
+    if (s_opts.nonRoot == MI_TRUE)
+    {
+        engine_argc = argc + 2;
+        engine_argv = _DuplicateArgv(argc, argv);
+    }
 
     /* Extract command-line options a second time (to override) */
     GetCommandLineOptions(&argc, argv);

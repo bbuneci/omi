@@ -462,21 +462,40 @@ void OpenLogFile()
 
 void HandleSIGTERM(int sig)
 {
-    if (sig == SIGTERM && s_dataPtr->selectorInitialized)
+    if (sig == SIGTERM)
     {
-        const char* socketFile = OMI_GetPath(ID_SOCKETFILE);
-        s_dataPtr->terminated = MI_TRUE;
-        Selector_StopRunning(&s_dataPtr->selector);
-        if (socketFile != NULL && *socketFile != '\0')
-            unlink(socketFile);
+        if (s_dataPtr->enginePid > 0)
+        {
+            int status;
+
+            kill(s_dataPtr->enginePid, SIGTERM);
+            waitpid(s_dataPtr->enginePid, &status, 0);
+        }
+
+        if (s_dataPtr->selectorInitialized)
+        {
+            const char* socketFile = OMI_GetPath(ID_SOCKETFILE);
+            s_dataPtr->terminated = MI_TRUE;
+            Selector_StopRunning(&s_dataPtr->selector);
+            if (socketFile != NULL && *socketFile != '\0')
+                unlink(socketFile);
+        }
     }
 }
 
 void HandleSIGHUP(int sig)
 {
-    if (sig == SIGHUP && s_dataPtr->selectorInitialized)
-    {
-        Selector_StopRunning(&s_dataPtr->selector);
+    if (sig == SIGHUP)
+    { 
+        if (s_dataPtr->enginePid > 0)
+        {
+            kill(s_dataPtr->enginePid, SIGHUP);
+        }
+
+        if(s_dataPtr->selectorInitialized)
+        {
+            Selector_StopRunning(&s_dataPtr->selector);
+        }
     }
 }
 
@@ -746,6 +765,32 @@ void GetConfigFileOptions()
                 s_optsPtr->ntlmCredFile = PAL_Strdup(value);
             }
         }
+        else if (strcasecmp(key, "nonroot") == 0)
+        {
+            if (Strcasecmp(value, "true") == 0)
+            {
+                s_optsPtr->nonRoot = MI_TRUE;
+            }
+            else if (Strcasecmp(value, "false") == 0)
+            {
+                s_optsPtr->nonRoot = MI_FALSE;
+            }
+            else
+            {
+                err(ZT("%s(%u): invalid value for '%s': %s"), scs(path), Conf_Line(conf), scs(key), scs(value));
+            }
+        }
+        else if (strcasecmp(key, "service") == 0)
+        {
+            if (value)
+            {
+                if (_SetServiceAccountFromString(value) != 0)
+                {
+                    err(ZT("invalid service account:  %T"), value);
+                }
+                s_optsPtr->serviceAccount = PAL_Strdup(value);
+            }
+        }
         else
         {
             err(ZT("%s(%u): unknown key: %s"), scs(path), Conf_Line(conf), scs(key));
@@ -793,6 +838,8 @@ void SetDefaults(Options *opts_ptr, ServerData *data_ptr, const char *executable
 
     s_dataPtr->protocol0 = NULL;
     s_dataPtr->protocol1 = NULL;
+    
+    s_dataPtr->enginePid = 0;
 }
 
 STRAND_DEBUGNAME( NoopRequest )
@@ -1229,8 +1276,8 @@ MI_Result RunProtocol()
     }
 
     ProtocolBase_Delete(s_dataPtr->protocol0);
-    if (s_dataPtr->protocol1)
-        ProtocolBase_Delete(&s_dataPtr->protocol1->internalProtocolBase);
+//    if (s_dataPtr->protocol1)
+//        ProtocolBase_Delete(&s_dataPtr->protocol1->internalProtocolBase);
     Selector_Destroy(&s_dataPtr->selector);
 
     /* Shutdown the network */
