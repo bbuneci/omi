@@ -356,6 +356,8 @@ OI_EVENT("Engine credentials have not been received")
 void trace_EngineCredentialsNotReceived();
 OI_EVENT("Tracker hash map error");
 void trace_TrackerHashMapError();
+OI_EVENT("Client credentials not yet verified. Msg type = %d");
+void trace_ClientCredentialsNotVerified(int type);
 
 /******************************** WARNINGS ***********************************/
 
@@ -1667,21 +1669,28 @@ void trace_ProcessSubscribeResponseEnumerationContext_TimedOutRequest(void * sel
 OI_EVENT("Engine credentials verified")
 void trace_EngineCredentialsVerified();
 OI_EVENT("Server closing socket (%p, %d)")
-void trace_ServerClosingSocket(void *handle, int socket);
+void trace_ServerClosingSocket(void* handle, int socket);
 OI_EVENT("Engine closing socket (%p, %d)")
-void trace_EngineClosingSocket(void *handle, int socket);
+void trace_EngineClosingSocket(void* handle, int socket);
 OI_EVENT("Server establishing socket with engine (%p, %d)")
-void trace_ServerEstablishingSocket(void *handle, int socket);
+void trace_ServerEstablishingSocket(void* handle, int socket);
 OI_EVENT("Engine establishing socket with server (%p, %d)")
-void trace_EngineEstablishingSocket(void *handle, int socket);
+void trace_EngineEstablishingSocket(void* handle, int socket);
 OI_EVENT("Server connection info received")
 void trace_ServerInfoReceived();
 OI_EVENT("Tracker hash map added (%p, %d)")
-void trace_TrackerHashMapAdd(void *handle, int socket);
+void trace_TrackerHashMapAdd(void* handle, int socket);
 OI_EVENT("Tracker hash map removeded (%d)")
 void trace_TrackerHashMapRemove(int socket);
 OI_EVENT("Tracker hash map found (%p, %d)")
-void trace_TrackerHashMapFind(void *handle, int socket);
+void trace_TrackerHashMapFind(void* handle, int socket);
+OI_EVENT("Engine: Client Credentials Verified")
+void trace_ClientCredentialsVerfied();
+OI_EVENT("Client: Client Credentials Verified")
+void trace_ClientCredentialsVerfied2();
+OI_EVENT("ClientAuthState = %d, EngineAuthState = %d")
+void trace_AuthStates(int client, int engine);
+
 
 /****************************** VERBOSE events ******************************/
 

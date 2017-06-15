@@ -504,13 +504,13 @@ static MI_Result _ProtocolSocketTrackerAddElement(Sock s, ProtocolSocket *protoc
 
     Lock_Acquire(&s_trackerLock);
     r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
+    Lock_Release(&s_trackerLock);
+
     if (r != 0)
     {
         // already exists
         return MI_RESULT_FAILED;
     }
-
-    Lock_Release(&s_trackerLock);
 
     trace_TrackerHashMapAdd(protocolSocket, s);
 
@@ -876,6 +876,7 @@ static MI_Boolean _ProcessAuthMessage(
         if (binMsg->result == MI_RESULT_OK)
         {
             handler->clientAuthState = PRT_AUTH_OK;
+            trace_ClientCredentialsVerfied2();
 
             if( Atomic_Swap(&handler->connectEventSent, 1) == 0 )
             {
@@ -1517,6 +1518,8 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
             MessageName(msg->tag),
             msg->operationId );
 
+        trace_AuthStates(handler->clientAuthState, handler->engineAuthState);
+
         if (msg->tag == PostSocketFileTag)
         {
             if( _ProcessEngineAuthMessage(handler, msg) )
@@ -1567,7 +1570,8 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                             return PRT_RETURN_FALSE;
                         }
 
-                        DEBUG_ASSERT(strlen(s_socketFile) > 0 && strlen(s_secretString) > 0);
+                        DEBUG_ASSERT(s_socketFile != NULL);
+                        DEBUG_ASSERT(s_secretString != NULL);
                         DEBUG_ASSERT(s == INVALID_SOCK);
 
                         /* Create connector socket */
@@ -1613,6 +1617,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         if (binMsg->result == MI_RESULT_OK)
                         {
                             newHandler->clientAuthState = PRT_AUTH_OK;
+                            trace_ClientCredentialsVerfied();
 
                             // close socket to server
                             trace_EngineClosingSocket(handler, handler->base.sock);
@@ -1664,12 +1669,20 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                             ret = PRT_CONTINUE;
                         }
                     }
+                    else
+                    {
+                        trace_ClientCredentialsNotVerified(msg->tag);
+                    }
                 }
                 else
                 {
                     if( _ProcessAuthMessage(handler, msg) )
                         ret = PRT_CONTINUE;
                 }
+            }
+            else
+            {
+                trace_ClientCredentialsNotVerified(msg->tag);
             }
         }
         else
