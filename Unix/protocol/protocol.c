@@ -490,6 +490,22 @@ static void _ProtocolSocketTrackerTestRelease(HashBucket *b)
     return;
 }
 
+static MI_Result _ProtocolSocketTrackerRemoveElement(Sock s)
+{
+    TrackerBucket b;
+    int r;
+
+    b.key = (int)s;
+
+    Lock_Acquire(&s_trackerLock);
+    r = HashMap_Remove(&s_protocolSocketTracker, (HashBucket*)&b);
+    Lock_Release(&s_trackerLock);
+
+    trace_TrackerHashMapRemove(s);
+
+    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
+}
+
 static MI_Result _ProtocolSocketTrackerAddElement(Sock s, ProtocolSocket *protocolSocket)
 {
     TrackerBucket *b;
@@ -509,26 +525,17 @@ static MI_Result _ProtocolSocketTrackerAddElement(Sock s, ProtocolSocket *protoc
     if (r != 0)
     {
         // already exists
-        return MI_RESULT_FAILED;
+        trace_TrackerHashMapAlreadyExists(protocolSocket, s);
+        MI_Result res = _ProtocolSocketTrackerRemoveElement(s);
+        if (res == MI_RESULT_OK)
+        {
+            Lock_Acquire(&s_trackerLock);
+            r = HashMap_Insert(&s_protocolSocketTracker, (HashBucket*)b);
+            Lock_Release(&s_trackerLock);
+        }
     }
 
     trace_TrackerHashMapAdd(protocolSocket, s);
-
-    return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
-}
-
-static MI_Result _ProtocolSocketTrackerRemoveElement(Sock s)
-{
-    TrackerBucket b;
-    int r;
-
-    b.key = (int)s;
-
-    Lock_Acquire(&s_trackerLock);
-    r = HashMap_Remove(&s_protocolSocketTracker, (HashBucket*)&b);
-    Lock_Release(&s_trackerLock);
-
-    trace_TrackerHashMapRemove(s);
 
     return r == 0 ? MI_RESULT_OK : MI_RESULT_FAILED;
 }
@@ -572,7 +579,10 @@ static MI_Boolean _SendAuthRequest(
     const char* user,
     const char* password,
     const char* fileContent,
-    Sock returnSock)
+    Sock returnSock,
+    uid_t uid,
+    gid_t gid
+    )
 {
     BinProtocolNotification* req;
     MI_Boolean retVal = MI_TRUE;
@@ -604,8 +614,16 @@ static MI_Boolean _SendAuthRequest(
         }
     }
 
-    req->uid = geteuid();
-    req->gid = getegid();
+    if (uid != -1 && gid != -1)
+    {
+        req->uid = uid;
+        req->gid = gid;
+    }
+    else
+    {
+        req->uid = geteuid();
+        req->gid = getegid();
+    }
 
     if (fileContent)
     {
@@ -632,7 +650,10 @@ static MI_Boolean _SendAuthResponse(
     ProtocolSocket* h,
     MI_Result result,
     const char* path,
-    Sock returnSock)
+    Sock returnSock,
+    uid_t uid,
+    gid_t gid
+    )
 {
     BinProtocolNotification* req;
     MI_Boolean retVal = MI_TRUE;
@@ -654,6 +675,9 @@ static MI_Boolean _SendAuthResponse(
             return MI_FALSE;
         }
     }
+
+    req->uid = uid;
+    req->gid = gid;
 
     /* send message */
     {
@@ -696,9 +720,6 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
 
     if (0 == memcmp(binMsg->authData, handler->authData->authRandom, AUTH_RANDOM_DATA_SIZE))
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
-            return MI_FALSE;
-
         /* Auth ok */
         handler->clientAuthState = PRT_AUTH_OK;
         _FreeAuthData(handler);
@@ -710,13 +731,17 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequestFileData(
             return MI_FALSE;
         }
 
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, 
+                               handler->authInfo.uid, handler->authInfo.gid))
+            return MI_FALSE;
+
         return MI_TRUE;
     }
 
     trace_AuthFailed_RandomDataMismatch();
 
     /* Auth failed */
-    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
+    _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, -1, -1);
     handler->clientAuthState = PRT_AUTH_FAILED;
     return MI_FALSE;
 }
@@ -750,7 +775,8 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (0 == AuthenticateUser(binMsg->user, binMsg->password) &&
             0 == LookupUser(binMsg->user, &handler->authInfo.uid, &handler->authInfo.gid))
         {
-            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
+                                   handler->authInfo.uid, handler->authInfo.gid))
                 return MI_FALSE;
 
             /* Auth ok */
@@ -762,25 +788,41 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         trace_AuthFailed_ForUser(scs(binMsg->user));
 
         /* Auth failed */
-        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
+        _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, -1, -1);
         handler->clientAuthState = PRT_AUTH_FAILED;
         return MI_FALSE;
     }
 
-    /* If system supports connection-based auth, use it for
-        implicit auth */
-    if (0 == GetUIDByConnection((int)handler->base.sock, &handler->authInfo.uid, &handler->authInfo.gid))
+    if (binMsg->forwardSock != INVALID_SOCK)
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
-            return MI_FALSE;
+        // request from engine
+        if (binMsg->uid != -1 && binMsg->gid != -1)
+        {
+            handler->authInfo.uid = binMsg->uid;
+            handler->authInfo.gid = binMsg->gid;
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
+                                   binMsg->uid, binMsg->gid))
+                return MI_FALSE;
+        }
+    }
+    else
+    {
+        /* If system supports connection-based auth, use it for
+           implicit auth */
+        if (0 == GetUIDByConnection((int)handler->base.sock, &handler->authInfo.uid, &handler->authInfo.gid))
+        {
+            if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock,
+                                   handler->authInfo.uid, handler->authInfo.gid))
+                return MI_FALSE;
 
-        /* Auth ok */
-        handler->clientAuthState = PRT_AUTH_OK;
-        return MI_TRUE;
+            /* Auth ok */
+            handler->clientAuthState = PRT_AUTH_OK;
+            return MI_TRUE;
+        }
     }
 #if defined(CONFIG_OS_WINDOWS)
     {
-        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_OK, NULL, binMsg->forwardSock, -1, -1))
             return MI_FALSE;
 
         /* Ignore Auth by setting it to OK */
@@ -799,7 +841,7 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
         if (!handler->authData)
         {
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, -1, -1);
             handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
@@ -809,13 +851,13 @@ static MI_Boolean _ProcessAuthMessageWaitingConnectRequest(
             trace_CannotCreateFileForUser((int)binMsg->uid);
 
             /* Auth failed */
-            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock);
+            _SendAuthResponse(handler, MI_RESULT_ACCESS_DENIED, NULL, binMsg->forwardSock, -1, -1);
             handler->clientAuthState = PRT_AUTH_FAILED;
             return MI_FALSE;
         }
 
         /* send file name to the client */
-        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->forwardSock))
+        if (!_SendAuthResponse(handler, MI_RESULT_IN_PROGRESS, handler->authData->path, binMsg->forwardSock, -1, -1))
             return MI_FALSE;
 
         /* Auth posponed */
@@ -908,7 +950,7 @@ static MI_Boolean _ProcessAuthMessage(
             }
 
             File_Close(is);
-            return _SendAuthRequest(handler, 0, 0, buf, binMsg->forwardSock);
+            return _SendAuthRequest(handler, 0, 0, buf, binMsg->forwardSock, -1, -1);
         }
         else
         {
@@ -1561,6 +1603,8 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                     {
                         // forward to server
 
+                        uid_t uid = -1;
+                        gid_t gid = -1;
                         Sock s = binMsg->forwardSock;
                         Sock forwardSock = handler->base.sock;
                         r = _ProtocolSocketTrackerAddElement(forwardSock, handler);
@@ -1573,6 +1617,14 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         DEBUG_ASSERT(s_socketFile != NULL);
                         DEBUG_ASSERT(s_secretString != NULL);
                         DEBUG_ASSERT(s == INVALID_SOCK);
+
+                        /* If system supports connection-based auth, use it for
+                           implicit auth */
+                        if (0 != GetUIDByConnection((int)handler->base.sock, &uid, &gid))
+                        {
+                            uid = binMsg->uid;
+                            gid = binMsg->gid;
+                        }
 
                         /* Create connector socket */
                         {
@@ -1596,7 +1648,7 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                         handler->clientAuthState = PRT_AUTH_WAIT_CONNECTION_RESPONSE;
                         
-                        if (_SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, forwardSock) )                
+                        if (_SendAuthRequest(handler, binMsg->user, binMsg->password, NULL, forwardSock, uid, gid) )                
                         {
                             ret = PRT_CONTINUE;
                         }
@@ -1617,6 +1669,8 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
                         if (binMsg->result == MI_RESULT_OK)
                         {
                             newHandler->clientAuthState = PRT_AUTH_OK;
+                            newHandler->authInfo.uid = binMsg->uid;
+                            newHandler->authInfo.gid = binMsg->gid;
                             trace_ClientCredentialsVerfied();
 
                             // close socket to server
@@ -1664,7 +1718,8 @@ static Protocol_CallbackResult _ProcessReceivedMessage(
 
                         handler = newHandler;
 
-                        if(_SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock))
+                        if(_SendAuthResponse(handler, binMsg->result, binMsg->authFile, forwardSock, 
+                                             binMsg->uid, binMsg->gid))
                         {
                             ret = PRT_CONTINUE;
                         }
@@ -2391,7 +2446,7 @@ MI_Result ProtocolSocketAndBase_New_Connector(
         h->engineAuthState = PRT_AUTH_OK;
 
         /* send connect request */
-        if( !_SendAuthRequest(h, user, password, NULL, INVALID_SOCK) )
+        if( !_SendAuthRequest(h, user, password, NULL, INVALID_SOCK, -1, -1) )
         {
             // this will call _RequestCallback which will schedule a CloseOther,
             // but that is not going delete the object (since it is not even truly opened),

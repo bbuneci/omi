@@ -806,6 +806,8 @@ void trace_NtlmEnvIgnored(const char * ntlm_user_file);
 OI_EVENT("SSL Compression was disabled in the OMI configuration, but the version of SSL used by OMI does not support it.")
 void trace_Http_SslCompressionNotPresent();
 
+OI_EVENT("Tracker hash map item already exists (%p, %d)")
+void trace_TrackerHashMapAlreadyExists(void* handle, int socket);
 
 
 /******************************** INFORMATIONAL ***********************************/

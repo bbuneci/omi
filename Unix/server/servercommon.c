@@ -198,17 +198,16 @@ int _ParseHttpPortSpecification(unsigned short **ports, int *size, const char *s
 
 static int _SetServiceAccountFromString(const char *account)
 {
-    if (strcmp(account, "root") == 0)
-    {
-        err(ZT("service account cannot be root"));
-    }
-
     if (LookupUser(account, &s_optsPtr->serviceAccountUID, &s_optsPtr->serviceAccountGID) != 0)
     {
         err(ZT("invalid service account:  %T"), account);
     }
 
-    s_optsPtr->serviceAccount = account;
+    if ( s_optsPtr->serviceAccountUID == 0)
+    {
+        err(ZT("service account cannot be root"));
+    }
+
     return 0;
 }
 
@@ -788,7 +787,6 @@ void GetConfigFileOptions()
                 {
                     err(ZT("invalid service account:  %T"), value);
                 }
-                s_optsPtr->serviceAccount = PAL_Strdup(value);
             }
         }
         else
@@ -825,7 +823,6 @@ void SetDefaults(Options *opts_ptr, ServerData *data_ptr, const char *executable
     s_optsPtr->livetime = 0;
     s_optsPtr->nonRoot = MI_FALSE;
 
-    s_optsPtr->serviceAccount = "omi_service";
     s_optsPtr->serviceAccountUID = -1;
     s_optsPtr->serviceAccountGID = -1;
     s_optsPtr->socketpairPort = (Sock)-1;
@@ -1053,7 +1050,7 @@ MI_Result WsmanProtocolListen()
 
             if (r != MI_RESULT_OK)
             {
-                err(ZT("WSMAN_New_Listener() failed for port %u"), s_optsPtr->httpport[count]);
+                err(ZT("WSMAN_New_Listener() failed for port %u. Err = %d"), s_optsPtr->httpport[count], r);
             }
 
             /* Log start up message */
@@ -1076,7 +1073,7 @@ MI_Result WsmanProtocolListen()
 
             if (r != MI_RESULT_OK)
             {
-                err(ZT("WSMAN_New_Listener() failed for encrypted port %u"), s_optsPtr->httpsport[count]);
+                err(ZT("WSMAN_New_Listener() failed for encrypted port %u. Err = %d"), s_optsPtr->httpsport[count], r);
             }
 
             /* Log start up message */

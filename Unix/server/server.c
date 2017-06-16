@@ -12,6 +12,7 @@
 #include <sock/sock.h>
 #include <pal/dir.h>
 #include <server/server.h>
+#include <libgen.h>
 
 #define S_SOCKET_LENGTH 8
 #define S_SECRET_STRING_LENGTH 32
@@ -45,7 +46,98 @@ OPTIONS:\n\
     --service ACCT              Use ACCT as the service account.\n\
 \n");
 
-static int _StartEngine(int argc, char** argv, const char *sockFile, const char *secretString)
+static MI_Result _GiveEnginePermissions()
+{
+    MI_Result r;
+
+    const char *clientSockFile = OMI_GetPath(ID_SOCKETFILE);
+    const char *keyFile = OMI_GetPath(ID_KEYFILE);
+    const char *authDir = OMI_GetPath(ID_AUTHDIR);
+    const char *localStateDir = OMI_GetPath(ID_LOCALSTATEDIR);
+    const char *homeDir = getenv("HOME");
+
+    char *clientSockDir;
+    char *ntlmUserFile = getenv("NTLM_USER_FILE");
+    char *ntlmDir;
+
+    char stringBuf[PAL_MAX_PATH_SIZE];
+    struct stat buffer;
+
+    /* Verify that server is started as root */
+    if (0 != IsRoot() )
+    {
+        // Can't do anything
+        return MI_RESULT_OK;
+    }
+
+    if (s_opts.serviceAccountUID <= 0 ||  s_opts.serviceAccountGID <= 0)
+    {
+        err(PAL_T("No valid service account provided"));
+    }
+
+    /* Make sure engine can create socket file (for comm with client) */
+    
+    strcpy(stringBuf, clientSockFile);
+    clientSockDir = dirname(stringBuf);
+    r = chown(clientSockDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+    if (r != 0)
+    {
+        err(PAL_T("failed to chown client sock directory: %s"), scs(clientSockDir));
+    }
+
+    /* Make sure engine can read ssl private key */
+    r = chown(keyFile, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+    if (r != 0)
+    {
+        err(PAL_T("failed to chown private key file: %s"), scs(keyFile));
+    }
+
+    /* Make sure engine can read auth files */
+    r = chown(authDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+    if (r != 0)
+    {
+        err(PAL_T("failed to chown auth directory: %s"), scs(authDir));
+    }
+
+    /* Make sure engine can write to var dir */
+    r = chown(localStateDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+    if (r != 0)
+    {
+        err(PAL_T("failed to chown local state directory: %s"), scs(localStateDir));
+    }
+
+    /* NTLM file */
+    if (ntlmUserFile)
+    {
+        strcpy(stringBuf, ntlmUserFile);
+    }
+    else
+    {
+        strcpy(stringBuf, homeDir);
+        strcat(stringBuf, "/.omi/ntlmcred");
+    }
+
+    if (stat(stringBuf, &buffer) == 0)
+    {
+        r = chown(stringBuf, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+        if (r != 0)
+        {
+            err(PAL_T("failed to chown ntlm file: %s"), scs(stringBuf));
+        }
+
+        ntlmDir = dirname(stringBuf);
+
+        r = chown(ntlmDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+        if (r != 0)
+        {
+            err(PAL_T("failed to chown ntlm directory: %s"), scs(ntlmDir));
+        }
+    }
+
+    return MI_RESULT_OK;
+}
+
+static int _StartEngine(int argc, char** argv, const char *engineSockFile, const char *secretString)
 {
     Sock s[2];
     char engineFile[PAL_MAX_PATH_SIZE];
@@ -55,12 +147,19 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
     int size;
     char socketString[S_SOCKET_LENGTH];
     MI_Result r;
+    const char *binDir = OMI_GetPath(ID_BINDIR);
 
-    Strlcpy(engineFile, OMI_GetPath(ID_BINDIR), PAL_MAX_PATH_SIZE);
+    r = _GiveEnginePermissions();
+    if (r != MI_RESULT_OK)
+    {
+        return -1;
+    }
+
+    Strlcpy(engineFile, binDir, PAL_MAX_PATH_SIZE);
     Strlcat(engineFile, "/omiengine", PAL_MAX_PATH_SIZE);
     argv[0] = engineFile;
 
-    r = BinaryProtocolListenFile(sockFile, &s_data.mux[0], &s_data.protocol0, secretString);
+    r = BinaryProtocolListenFile(engineSockFile, &s_data.mux[0], &s_data.protocol0, secretString);
     if (r != MI_RESULT_OK)
     {
         return -1;
@@ -89,7 +188,7 @@ static int _StartEngine(int argc, char** argv, const char *sockFile, const char 
         s_data.enginePid = child;
         trace_ServerClosingSocket(0, s[1]);
         Sock_Close(s[1]);
-        r = BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, sockFile, secretString);
+        r = BinaryProtocolListenSock(s[0], &s_data.mux[1], &s_data.protocol1, engineSockFile, secretString);
         if (r != MI_RESULT_OK)
         {
             return -1;
@@ -153,22 +252,21 @@ static char** _DuplicateArgv(int argc, const char* argv[])
     return newArgv;
 }
 
-static int _GenerateRandomString(char *buffer, int length)
+static int _GenerateRandomString(char *buffer, int bufLen)
 {
     const char letters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     time_t t;
     int i;
-
-    if (length > PAL_MAX_PATH_SIZE - 1)
-        length = PAL_MAX_PATH_SIZE - 1;
+    unsigned int availableLetters = sizeof(letters) - 1;
 
     srand((unsigned) time(&t));
-    for (i=0; i<length - 1; ++i)
+    
+    for (i = 0; i < bufLen - 1; ++i)
     {
-        buffer[i] = letters[rand() % sizeof(letters)];
+        buffer[i] = letters[rand() % availableLetters];
     }
-    buffer[length - 1] = '\0';
 
+    buffer[bufLen - 1] = '\0';
     return 0;
 }
 
@@ -193,23 +291,35 @@ static int _CreateSockFile(char *sockFileBuf, int sockFileBufSize, char *secretS
             Strlcpy(file, sockDir, PAL_MAX_PATH_SIZE);
             Strlcat(file, "/", PAL_MAX_PATH_SIZE);
             Strlcat(file, entry->name, PAL_MAX_PATH_SIZE);
-            printf("Removing %s...\n", file);
+            //printf("Removing %s...\n", file);
             unlink(file);
         }
     }
     else
     {
         int r;
-        r = Mkdir(sockDir, 0700);
-        if (r != 0)
-        {
-            err(PAL_T("failed to create sockets directory: %T"), tcs(sockDir));
-        }
 
-        r = chown(sockDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
-        if (r != 0)
+        if (0 == IsRoot())
         {
-            err(PAL_T("failed to chown sockets directory: %T"), tcs(sockDir));
+            r = Mkdir(sockDir, 0700);
+            if (r != 0)
+            {
+                err(PAL_T("failed to create sockets directory: %s"), scs(sockDir));
+            }
+
+            r = chown(sockDir, s_opts.serviceAccountUID, s_opts.serviceAccountGID);
+            if (r != 0)
+            {
+                err(PAL_T("failed to chown sockets directory: %s"), scs(sockDir));
+            }
+        }
+        else
+        {
+            r = Mkdir(sockDir, 0755);
+            if (r != 0)
+            {
+                err(PAL_T("failed to create sockets directory: %s"), scs(sockDir));
+            }
         }
     }
         
@@ -226,6 +336,7 @@ static int _CreateSockFile(char *sockFileBuf, int sockFileBufSize, char *secretS
     Strlcpy(sockFileBuf, sockDir, sockFileBufSize);
     Strlcat(sockFileBuf, "/omi_", sockFileBufSize);
     Strlcat(sockFileBuf, name, sockFileBufSize);
+
     return 0;
 }
 

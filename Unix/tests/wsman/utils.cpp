@@ -284,7 +284,7 @@ int StartServerAndConnect(
 #endif
             break;
 
-        ut::sleep_ms(100);
+        ut::sleep_ms(500);
     }
 
     if (attempt == maxAttempts)
@@ -310,7 +310,7 @@ int StartServerAndConnect(
     UT_ASSERT( MI_RESULT_OK == result );
 
     // A new socket connection is created, give it a little time
-    ut::sleep_ms(100);
+    ut::sleep_ms(200);
 
     if (result == MI_RESULT_OK)
         return 0;
